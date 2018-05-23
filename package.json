@@ -1,0 +1,33 @@
+{
+  "name": "iiif-loader",
+  "version": "0.0.0",
+  "description": "",
+  "main": "bundle.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Brainfood-com/gis-app.git"
+  },
+  "scripts": {
+    "dev": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "babel": {
+    "presets": [
+      "es2015",
+      "react",
+      "stage-0",
+      "stage-2"
+    ]
+  },
+  "bugs": {
+    "url": "https://github.com/Brainfood-com/gis-app/issues"
+  },
+  "homepage": "https://github.com/Brainfood-com/gis-app#readme",
+  "dependencies": {
+    "cors": "^2.8.4",
+    "express": "^4.16.3",
+    "pg": "^7.4.3"
+  }
+}
