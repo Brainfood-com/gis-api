@@ -93,32 +93,47 @@ app.get('/manifest/:manifestId', (req, res) => {
   })
 })
 
-app.get('/manifest/:manifestId/canvas', (req, res) => {
+app.get('/manifest/:manifestId/range/:rangeId/canvasPoints', (req, res) => {
   dbPoolWorker(res, async client => {
-    const {manifestId} = req.params
-    const rawIds = req.query.id
-    if (!!!rawIds) {
-      return
-    }
-    const ids = (rawIds instanceof Array ? rawIds : [rawIds])
-    //console.log('ids', ids)
+    const {manifestId, rangeId} = req.params
     const query = `
-SELECT can_base.label, can.*
+SELECT
+    (row_number() OVER (ORDER BY rang_can_assoc.sequence_num) - 1)::float / (count(*) OVER () - 1)::float AS position,
+		ST_AsGeoJSON(ST_LineInterpolatePoint((SELECT st_linemerge(st_collect(geom)) AS geom FROM sunset_road_merged), (
+				(row_number() OVER (ORDER BY rang_can_assoc.sequence_num) - 1)::float
+				/
+				(count(*) OVER () - 1)::float
+		))) AS point,
+    can_base.label, can.*
 FROM
-    iiif_assoc man_can_assoc JOIN iiif can_base ON
-      man_can_assoc.iiif_id_to = can_base.iiif_id
+    iiif_assoc man_rang_assoc JOIN iiif_assoc rang_can_assoc ON
+      man_rang_assoc.iiif_id_to = rang_can_assoc.iiif_id_from
       AND
-      man_can_assoc.iiif_assoc_type_id = 'sc:Canvas'
+      man_rang_assoc.iiif_assoc_type_id = 'sc:Range'
+    JOIN iiif_assoc man_seq_assoc ON
+      man_rang_assoc.iiif_id_from = man_seq_assoc.iiif_id_from
+      AND
+      man_seq_assoc.iiif_assoc_type_id = 'sc:Sequence'
+    JOIN iiif_assoc seq_can_assoc ON
+      man_seq_assoc.iiif_id_to = seq_can_assoc.iiif_id_from
+    JOIN iiif can_base ON
+      seq_can_assoc.iiif_id_to = can_base.iiif_id
+      AND
+      seq_can_assoc.iiif_assoc_type_id = 'sc:Canvas'
+      AND
+      rang_can_assoc.iiif_id_to = can_base.iiif_id
+      AND
+      rang_can_assoc.iiif_assoc_type_id = 'sc:Canvas'
     JOIN iiif_canvas can ON
       can_base.iiif_id = can.iiif_id
 WHERE
-    man_can_assoc.iiif_id_from = $1
+    man_rang_assoc.iiif_id_from = $1
     AND
-    man_can_assoc.iiif_id_to IN (${ids.map((id, index) => '$' + (index + 2)).join(',')})
+    man_rang_assoc.iiif_id_to = $2
 `.replace(/[\r\n ]+/g, ' ')
     //console.log('query', query)
-    const manifestRangeMembersResult = await client.query(query, [manifestId, ...ids])
-    return manifestRangeMembersResult.rows.map(({iiif_id: id, ...row}) => ({id, ...row}))
+    const manifestRangeMembersResult = await client.query(query, [manifestId, rangeId])
+    return manifestRangeMembersResult.rows.map(({iiif_id: id, point, ...row}) => ({id, point: JSON.parse(point), ...row}))
   })
 })
 
