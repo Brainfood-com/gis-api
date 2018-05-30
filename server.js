@@ -2,8 +2,10 @@
 
 const express = require('express')
 const cors = require('cors')
+const bodyParser = require('body-parser')
 const { Client, Pool } = require('pg')
 
+const jsonParser = bodyParser.json()
 const dbConf = {
 	user: 'gis',
 	host: 'postgresql',
@@ -93,47 +95,129 @@ app.get('/manifest/:manifestId', (req, res) => {
   })
 })
 
+app.post('/manifest/:manifestId/canvas/:canvasId/point/:sourceId', jsonParser, (req, res) => {
+  dbPoolWorker(res, async client => {
+    const {manifestId, canvasId, sourceId} = req.params
+    console.log(req.body)
+    const {body: {priority, notes, point}} = req
+    const query = `
+WITH canvas_external_id AS (
+  SELECT
+    external_id
+  FROM
+    sequence_canvas
+  WHERE
+    manifest_id = $1
+    AND
+    iiif_id = $2
+), override_id AS (
+  INSERT INTO iiif_overrides
+    (external_id)
+    SELECT
+      canvas_external_id.external_id
+    FROM canvas_external_id
+
+    ON CONFLICT (external_id) DO UPDATE SET external_id = EXCLUDED.external_id
+    RETURNING iiif_override_id
+)
+INSERT INTO iiif_canvas_overrides
+  (iiif_override_id, iiif_canvas_override_source_id, priority, notes, point)
+  SELECT
+    override_id.iiif_override_id, $3, $4, $5, ST_SetSRID(ST_GeomFromGeoJSON($6), 4326)
+  FROM override_id
+
+  ON CONFLICT (iiif_override_id, iiif_canvas_override_source_id)
+  DO UPDATE SET (priority, notes, point) = ROW($4, $5, ST_SetSRID(ST_GeomFromGeoJSON($6), 4326))
+`
+    const insertUpdateResult = await client.query(query, [manifestId, canvasId, sourceId, priority, notes, point])
+    return {ok: true}
+  })
+})
+
 app.get('/manifest/:manifestId/range/:rangeId/canvasPoints', (req, res) => {
   dbPoolWorker(res, async client => {
     const {manifestId, rangeId} = req.params
     const query = `
+WITH road AS (
+	SELECT geom from sunset_road_merged
+),
+canvas_percent_placement AS (
+	SELECT
+		iiif.iiif_id,
+		ST_LineLocatePoint((SELECT geom FROM road), ST_Centroid(ST_Collect(canvas_overrides.point))) AS percentage
+	FROM
+		iiif JOIN canvas_overrides ON
+			iiif.external_id = canvas_overrides.external_id
+	GROUP BY
+		iiif.iiif_id
+),
+canvas_range_grouping AS (
+	SELECT
+		range_canvas.manifest_id,
+		range_canvas.range_id,
+		range_canvas.iiif_id,
+		range_canvas.sequence_num,
+		canvas_percent_placement.percentage,
+		count(canvas_percent_placement.percentage) OVER (ORDER BY range_canvas.sequence_num) AS forward,
+		count(canvas_percent_placement.percentage) OVER (ORDER BY range_canvas.sequence_num DESC) AS reverse
+	FROM
+		range_canvas LEFT JOIN canvas_percent_placement ON
+			range_canvas.iiif_id = canvas_percent_placement.iiif_id
+	WHERE
+		range_canvas.manifest_id = $1
+		AND
+		range_canvas.range_id = $2
+ 	GROUP BY
+ 		range_canvas.manifest_id,
+ 		range_canvas.range_id,
+ 		range_canvas.iiif_id,
+ 		range_canvas.sequence_num,
+ 		canvas_percent_placement.percentage
+),
+canvas_in_range_list AS (
+	SELECT
+		canvas_range_grouping.manifest_id,
+		canvas_range_grouping.range_id,
+		canvas_range_grouping.iiif_id,
+		canvas_range_grouping.percentage,
+		percent_rank() OVER (PARTITION BY canvas_range_grouping.reverse ORDER BY canvas_range_grouping.sequence_num) start_rank,
+		cume_dist() OVER (PARTITION BY canvas_range_grouping.reverse ORDER BY canvas_range_grouping.sequence_num) other_rank,
+		COALESCE(first_value(canvas_range_grouping.percentage) OVER (PARTITION BY canvas_range_grouping.reverse ORDER BY canvas_range_grouping.sequence_num DESC), 1) AS end,
+		COALESCE(first_value(canvas_range_grouping.percentage) OVER (PARTITION BY canvas_range_grouping.forward ORDER BY canvas_range_grouping.sequence_num), 0) AS start
+	FROM
+		canvas_range_grouping
+)
 SELECT
-    (row_number() OVER (ORDER BY rang_can_assoc.sequence_num) - 1)::float / (count(*) OVER () - 1)::float AS position,
-		ST_AsGeoJSON(ST_LineInterpolatePoint((SELECT st_linemerge(st_collect(geom)) AS geom FROM sunset_road_merged), (
-				(row_number() OVER (ORDER BY rang_can_assoc.sequence_num) - 1)::float
-				/
-				(count(*) OVER () - 1)::float
-		))) AS point,
-    can_base.label, can.*
+	canvas_in_range_list.start,
+	canvas_in_range_list.end,
+	ST_AsGeoJSON(ST_LineInterpolatePoint((SELECT st_linemerge(st_collect(geom)) AS geom FROM road), (
+			canvas_in_range_list.end -
+			canvas_in_range_list.start
+		) *
+		CASE
+			WHEN canvas_in_range_list.start IS NULL THEN
+				canvas_in_range_list.start_rank
+			ELSE
+				canvas_in_range_list.other_rank
+		END + canvas_in_range_list.start
+	)) AS point,
+	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'notes', notes, 'point', ST_AsGeoJSON(point))) FROM canvas_overrides WHERE external_id = range_canvas.external_id) AS overrides,
+	range_canvas.*
 FROM
-    iiif_assoc man_rang_assoc JOIN iiif_assoc rang_can_assoc ON
-      man_rang_assoc.iiif_id_to = rang_can_assoc.iiif_id_from
-      AND
-      man_rang_assoc.iiif_assoc_type_id = 'sc:Range'
-    JOIN iiif_assoc man_seq_assoc ON
-      man_rang_assoc.iiif_id_from = man_seq_assoc.iiif_id_from
-      AND
-      man_seq_assoc.iiif_assoc_type_id = 'sc:Sequence'
-    JOIN iiif_assoc seq_can_assoc ON
-      man_seq_assoc.iiif_id_to = seq_can_assoc.iiif_id_from
-    JOIN iiif can_base ON
-      seq_can_assoc.iiif_id_to = can_base.iiif_id
-      AND
-      seq_can_assoc.iiif_assoc_type_id = 'sc:Canvas'
-      AND
-      rang_can_assoc.iiif_id_to = can_base.iiif_id
-      AND
-      rang_can_assoc.iiif_assoc_type_id = 'sc:Canvas'
-    JOIN iiif_canvas can ON
-      can_base.iiif_id = can.iiif_id
-WHERE
-    man_rang_assoc.iiif_id_from = $1
-    AND
-    man_rang_assoc.iiif_id_to = $2
+	range_canvas JOIN canvas_in_range_list ON
+		range_canvas.iiif_id = canvas_in_range_list.iiif_id
+ORDER BY
+	range_canvas.iiif_id
 `.replace(/[\r\n ]+/g, ' ')
     //console.log('query', query)
     const manifestRangeMembersResult = await client.query(query, [manifestId, rangeId])
-    return manifestRangeMembersResult.rows.map(({iiif_id: id, point, ...row}) => ({id, point: JSON.parse(point), ...row}))
+    return manifestRangeMembersResult.rows.map(({iiif_id: id, point, overrides, ...row}) => {
+      if (overrides) {
+        console.log('about to parse', overrides.point)
+        overrides.point = JSON.parse(overrides.point || null)
+      }
+      return ({id, point: JSON.parse(point), overrides, ...row})
+    })
   })
 })
 
