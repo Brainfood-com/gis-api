@@ -127,7 +127,7 @@ INSERT INTO iiif_canvas_overrides
   FROM override_id
 
   ON CONFLICT (iiif_override_id, iiif_canvas_override_source_id)
-  DO UPDATE SET (priority, notes, point) = ROW($4, $5, ST_SetSRID(ST_GeomFromGeoJSON($6), 4326))
+  DO UPDATE SET (priority, notes, point) = ROW($4, $5, CASE WHEN $6 IS NOT NULL THEN ST_SetSRID(ST_GeomFromGeoJSON($6), 4326) ELSE NULL END)
 `
     const insertUpdateResult = await client.query(query, [manifestId, canvasId, sourceId, priority, notes, point])
     return {ok: true}
@@ -213,7 +213,7 @@ ORDER BY
     const manifestRangeMembersResult = await client.query(query, [manifestId, rangeId])
     return manifestRangeMembersResult.rows.map(({iiif_id: id, point, overrides, ...row}) => {
       if (overrides) {
-        console.log('about to parse', overrides.point)
+        //console.log('about to parse', overrides.point)
         overrides.point = JSON.parse(overrides.point || null)
       }
       return ({id, point: JSON.parse(point), overrides, ...row})
