@@ -71,11 +71,41 @@ app.get('/manifest/:manifestId', (req, res) => {
     const {manifestId} = req.params
     const manifestResult = await client.query("SELECT a.label, b.* FROM iiif a JOIN iiif_manifest b ON a.iiif_id = b.iiif_id WHERE a.iiif_id = $1", [manifestId])
     const manifestRangesResult = await client.query("SELECT a.iiif_id_to AS range_id, b.label, c.viewing_hint FROM iiif_assoc a JOIN iiif b ON a.iiif_id_to = b.iiif_id AND a.iiif_assoc_type_id = 'sc:Range' JOIN iiif_range c ON b.iiif_id = c.iiif_id WHERE a.iiif_id_from = $1 ORDER BY a.sequence_num, b.label", [manifestId])
-    const manifestRangeMembersResult = await client.query("SELECT a.iiif_id_to AS range_id, b.iiif_assoc_type_id, b.iiif_id_to AS member_id FROM iiif_assoc a JOIN iiif_assoc b ON a.iiif_id_to = b.iiif_id_from AND a.iiif_assoc_type_id = 'sc:Range' WHERE a.iiif_id_from = $1 ORDER BY b.sequence_num", [manifestId])
+    const manifestRangeMembersResult = await client.query(`
+WITH has_point_override AS (
+  SELECT
+    a.external_id,
+    a.iiif_override_id
+  FROM
+    iiif_overrides a JOIN iiif_canvas_overrides b ON
+      a.iiif_override_id = b.iiif_override_id
+  WHERE
+    b.point IS NOT NULL
+)
+SELECT
+  a.iiif_id_to AS range_id,
+  b.iiif_assoc_type_id,
+  b.iiif_id_to AS member_id,
+  EXISTS(SELECT * FROM has_point_override WHERE has_point_override.external_id = c.external_id) AS has_override_point
+FROM
+  iiif_assoc a JOIN iiif_assoc b ON
+    a.iiif_id_to = b.iiif_id_from
+    AND
+    a.iiif_assoc_type_id = 'sc:Range'
+  JOIN iiif c ON
+    b.iiif_id_to = c.iiif_id
+WHERE
+  a.iiif_id_from = $1
+ORDER BY
+  b.sequence_num
+`, [manifestId])
     const rangesToMembers = {}
     manifestRangeMembersResult.rows.forEach(memberRow => {
-      const {range_id: rangeId, iiif_assoc_type_id: typeId, member_id: memberId} = memberRow
-      const rangeMembers = rangesToMembers[rangeId] || (rangesToMembers[rangeId] = {ranges: [], canvases: []})
+      const {range_id: rangeId, iiif_assoc_type_id: typeId, member_id: memberId, has_override_point: hasOverridePoint} = memberRow
+      const rangeMembers = rangesToMembers[rangeId] || (rangesToMembers[rangeId] = {ranges: [], canvases: [], pointOverrideCount: 0})
+      if (hasOverridePoint) {
+        ++rangeMembers.pointOverrideCount
+      }
       switch (typeId) {
         case 'sc:Range':
           rangeMembers.ranges.push(memberId)
@@ -88,7 +118,7 @@ app.get('/manifest/:manifestId', (req, res) => {
     const structures = manifestRangesResult.rows.map(rangeRow => {
       const {range_id: rangeId, label, viewing_hint: viewingHint} = rangeRow
       const members = rangesToMembers[rangeId] || {}
-      return {id: rangeId, label, viewingHint, ranges: members.ranges, canvases: members.canvases}
+      return {...members, id: rangeId, label, viewingHint}
     })
     const {iiif_id, viewing_hint: viewingHint, ...manifest} = manifestResult.rows[0]
     return {id: manifestId, viewingHint, ...manifest, structures}
