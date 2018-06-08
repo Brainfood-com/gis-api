@@ -169,7 +169,7 @@ app.get('/manifest/:manifestId/range/:rangeId/canvasPoints', (req, res) => {
     const {manifestId, rangeId} = req.params
     const query = `
 WITH road AS (
-	SELECT geom from sunset_road_merged
+	SELECT st_linemerge(st_collect(geom)) AS geom FROM sunset_road_merged
 ),
 canvas_percent_placement AS (
 	SELECT
@@ -220,7 +220,7 @@ canvas_in_range_list AS (
 SELECT
 	canvas_in_range_list.start,
 	canvas_in_range_list.end,
-	ST_AsGeoJSON(ST_LineInterpolatePoint((SELECT st_linemerge(st_collect(geom)) AS geom FROM road), (
+	ST_AsGeoJSON(ST_LineInterpolatePoint((SELECT road.geom FROM road), (
 			canvas_in_range_list.end -
 			canvas_in_range_list.start
 		) *
