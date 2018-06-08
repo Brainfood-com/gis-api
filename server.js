@@ -40,24 +40,27 @@ app.use(cors())
 
 app.get('/collection', async (req, res) => {
   dbPoolWorker(res, async client => {
-    const collectionResult = await client.query("SELECT iiif_id, label FROM iiif WHERE iiif_type_id = 'sc:Collection'")
+    const type = 'sc:Collection'
+    const collectionResult = await client.query("SELECT iiif_id, label FROM iiif WHERE iiif_type_id = $1", [type])
     return collectionResult.rows.map(row => {
-      return {id: row.iiif_id, label: row.label}
+      return {id: row.iiif_id, label: row.label, type}
     })
   })
 })
 
 app.get('/collection/:collectionId', (req, res) => {
   dbPoolWorker(res, async client => {
+    const type = 'sc:Collection'
     const {collectionId} = req.params
-    const collectionResult = await client.query("SELECT iiif_id, label FROM iiif WHERE iiif_type_id = 'sc:Collection' AND iiif_id = $1", [collectionId])
-    const assocResult = await client.query("SELECT a.iiif_id_to, a.iiif_assoc_type_id, b.label FROM iiif_assoc a JOIN iiif b ON a.iiif_id_to = b.iiif_id WHERE a.iiif_id_from = $1 ORDER BY a.sequence_num, b.label", [collectionId])
-    return result = {
+    const collectionResult = await client.query("SELECT iiif_id, label FROM iiif WHERE iiif_type_id = $1 AND iiif_id = $2", [type, collectionId])
+    const assocResult = await client.query("SELECT a.iiif_id_to, a.iiif_assoc_type_id, b.label, b.iiif_type_id FROM iiif_assoc a JOIN iiif b ON a.iiif_id_to = b.iiif_id WHERE a.iiif_id_from = $1 ORDER BY a.sequence_num, b.label", [collectionId])
+    return {
       id: collectionId,
       label: collectionResult.rows[0].label,
       members: assocResult.rows.map(row => {
-        return {id: row.iiif_id_to, type: row.iiif_assoc_type_id, label: row.label}
-      })
+        return {id: row.iiif_id_to, type: row.iiif_assoc_type_id, label: row.label, type: row.iiif_type_id}
+      }),
+      type,
     }
   })
 })
@@ -66,10 +69,29 @@ app.get('/manifest', (req, res) => {
 	res.status(500).send('error')
 })
 
+
 app.get('/manifest/:manifestId', (req, res) => {
   dbPoolWorker(res, async client => {
+    const type = 'sc:Manifest'
     const {manifestId} = req.params
-    const manifestResult = await client.query("SELECT a.label, b.* FROM iiif a JOIN iiif_manifest b ON a.iiif_id = b.iiif_id WHERE a.iiif_id = $1", [manifestId])
+    const manifestResult = await client.query("SELECT * FROM manifest WHERE iiif_id = $1", [manifestId])
+    const firstRow = manifestResult.rows[0]
+    return {
+      id: manifestId,
+      attribution: firstRow.attribution,
+      description: firstRow.description,
+      label: firstRow.label,
+      license: firstRow.license,
+      logo: firstRow.logo,
+      type: firstRow.iiif_type_id,
+      viewingHint: firstRow.viewingHint,
+    }
+  })
+})
+
+app.get('/manifest/:manifestId/structures', (req, res) => {
+  dbPoolWorker(res, async client => {
+    const {manifestId} = req.params
     const manifestRangesResult = await client.query("SELECT a.iiif_id_to AS range_id, b.label, c.viewing_hint FROM iiif_assoc a JOIN iiif b ON a.iiif_id_to = b.iiif_id AND a.iiif_assoc_type_id = 'sc:Range' JOIN iiif_range c ON b.iiif_id = c.iiif_id WHERE a.iiif_id_from = $1 ORDER BY a.sequence_num, b.label", [manifestId])
     const manifestRangeMembersResult = await client.query(`
 WITH has_point_override AS (
@@ -86,6 +108,7 @@ SELECT
   a.iiif_id_to AS range_id,
   b.iiif_assoc_type_id,
   b.iiif_id_to AS member_id,
+  c.iiif_type_id AS member_type_id,
   EXISTS(SELECT * FROM has_point_override WHERE has_point_override.external_id = c.external_id) AS has_override_point
 FROM
   iiif_assoc a JOIN iiif_assoc b ON
@@ -116,18 +139,17 @@ ORDER BY
       }
     })
     const structures = manifestRangesResult.rows.map(rangeRow => {
-      const {range_id: rangeId, label, viewing_hint: viewingHint} = rangeRow
+      const {range_id: rangeId, label, iiif_type_id: type, viewing_hint: viewingHint} = rangeRow
       const members = rangesToMembers[rangeId] || {}
-      return {...members, id: rangeId, label, viewingHint}
+      return {...members, id: rangeId, label, type, viewingHint}
     })
-    const {iiif_id, viewing_hint: viewingHint, ...manifest} = manifestResult.rows[0]
-    return {id: manifestId, viewingHint, ...manifest, structures}
+    return structures
   })
 })
 
-app.post('/manifest/:manifestId/canvas/:canvasId/point/:sourceId', jsonParser, (req, res) => {
+app.post('/canvas/:canvasId/point/:sourceId', jsonParser, (req, res) => {
   dbPoolWorker(res, async client => {
-    const {manifestId, canvasId, sourceId} = req.params
+    const {canvasId, sourceId} = req.params
     console.log(req.body)
     const {body: {priority, notes, point}} = req
     const query = `
@@ -135,11 +157,9 @@ WITH canvas_external_id AS (
   SELECT
     external_id
   FROM
-    sequence_canvas
+    canvas
   WHERE
-    manifest_id = $1
-    AND
-    iiif_id = $2
+    iiif_id = $1
 ), override_id AS (
   INSERT INTO iiif_overrides
     (external_id)
@@ -153,20 +173,20 @@ WITH canvas_external_id AS (
 INSERT INTO iiif_canvas_overrides
   (iiif_override_id, iiif_canvas_override_source_id, priority, notes, point)
   SELECT
-    override_id.iiif_override_id, $3, $4, $5, ST_SetSRID(ST_GeomFromGeoJSON($6), 4326)
+    override_id.iiif_override_id, $2, $3, $4, ST_SetSRID(ST_GeomFromGeoJSON($5), 4326)
   FROM override_id
 
   ON CONFLICT (iiif_override_id, iiif_canvas_override_source_id)
-  DO UPDATE SET (priority, notes, point) = ROW($4, $5, CASE WHEN $6 IS NOT NULL THEN ST_SetSRID(ST_GeomFromGeoJSON($6), 4326) ELSE NULL END)
+  DO UPDATE SET (priority, notes, point) = ROW($3, $4, CASE WHEN $5 IS NOT NULL THEN ST_SetSRID(ST_GeomFromGeoJSON($5), 4326) ELSE NULL END)
 `
-    const insertUpdateResult = await client.query(query, [manifestId, canvasId, sourceId, priority, notes, point])
+    const insertUpdateResult = await client.query(query, [canvasId, sourceId, priority, notes, point])
     return {ok: true}
   })
 })
 
-app.get('/manifest/:manifestId/range/:rangeId/canvasPoints', (req, res) => {
+app.get('/range/:rangeId/canvasPoints', (req, res) => {
   dbPoolWorker(res, async client => {
-    const {manifestId, rangeId} = req.params
+    const {rangeId} = req.params
     const query = `
 WITH road AS (
 	SELECT st_linemerge(st_collect(geom)) AS geom FROM sunset_road_merged
@@ -183,7 +203,6 @@ canvas_percent_placement AS (
 ),
 canvas_range_grouping AS (
 	SELECT
-		range_canvas.manifest_id,
 		range_canvas.range_id,
 		range_canvas.iiif_id,
 		range_canvas.sequence_num,
@@ -194,11 +213,8 @@ canvas_range_grouping AS (
 		range_canvas LEFT JOIN canvas_percent_placement ON
 			range_canvas.iiif_id = canvas_percent_placement.iiif_id
 	WHERE
-		range_canvas.manifest_id = $1
-		AND
-		range_canvas.range_id = $2
+		range_canvas.range_id = $1
  	GROUP BY
- 		range_canvas.manifest_id,
  		range_canvas.range_id,
  		range_canvas.iiif_id,
  		range_canvas.sequence_num,
@@ -206,7 +222,6 @@ canvas_range_grouping AS (
 ),
 canvas_in_range_list AS (
 	SELECT
-		canvas_range_grouping.manifest_id,
 		canvas_range_grouping.range_id,
 		canvas_range_grouping.iiif_id,
 		canvas_range_grouping.percentage,
@@ -235,12 +250,14 @@ SELECT
 	range_canvas.*
 FROM
 	range_canvas JOIN canvas_in_range_list ON
+    range_canvas.range_id = canvas_in_range_list.range_id
+    AND
 		range_canvas.iiif_id = canvas_in_range_list.iiif_id
 ORDER BY
 	range_canvas.iiif_id
 `.replace(/[\r\n ]+/g, ' ')
     //console.log('query', query)
-    const manifestRangeMembersResult = await client.query(query, [manifestId, rangeId])
+    const manifestRangeMembersResult = await client.query(query, [rangeId])
     return manifestRangeMembersResult.rows.map(({iiif_id: id, point, overrides, ...row}) => {
       if (overrides) {
         //console.log('about to parse', overrides.point)
