@@ -53,10 +53,11 @@ app.get('/collection/:collectionId', (req, res) => {
     const type = 'sc:Collection'
     const {collectionId} = req.params
     const collectionResult = await client.query("SELECT iiif_id, label FROM iiif WHERE iiif_type_id = $1 AND iiif_id = $2", [type, collectionId])
+    const firstRow = collectionResult.rows[0]
     const assocResult = await client.query("SELECT a.iiif_id_to, a.iiif_assoc_type_id, b.label, b.iiif_type_id FROM iiif_assoc a JOIN iiif b ON a.iiif_id_to = b.iiif_id WHERE a.iiif_id_from = $1 ORDER BY a.sequence_num, b.label", [collectionId])
     return {
-      id: collectionId,
-      label: collectionResult.rows[0].label,
+      id: firstRow.iiif_id,
+      label: firstRow.label,
       members: assocResult.rows.map(row => {
         return {id: row.iiif_id_to, type: row.iiif_assoc_type_id, label: row.label, type: row.iiif_type_id}
       }),
@@ -72,12 +73,11 @@ app.get('/manifest', (req, res) => {
 
 app.get('/manifest/:manifestId', (req, res) => {
   dbPoolWorker(res, async client => {
-    const type = 'sc:Manifest'
     const {manifestId} = req.params
     const manifestResult = await client.query("SELECT * FROM manifest WHERE iiif_id = $1", [manifestId])
     const firstRow = manifestResult.rows[0]
     return {
-      id: manifestId,
+      id: firstRow.iiif_id,
       attribution: firstRow.attribution,
       description: firstRow.description,
       label: firstRow.label,
@@ -99,7 +99,7 @@ WITH has_point_override AS (
     a.external_id,
     a.iiif_override_id
   FROM
-    iiif_overrides a JOIN iiif_canvas_overrides b ON
+    iiif_overrides a JOIN iiif_canvas_point_overrides b ON
       a.iiif_override_id = b.iiif_override_id
   WHERE
     b.point IS NOT NULL
@@ -147,11 +147,88 @@ ORDER BY
   })
 })
 
+async function updateTags(client, iiifId, tags) {
+}
+
+app.post('/range/:rangeId', jsonParser, (req, res) => {
+  dbPoolWorker(res, async client => {
+    const {rangeId} = req.params
+    console.log(req.body)
+    const {body: {notes, fovAngle, fovDepth, fovOrientation, tags}} = req
+    const query = `
+WITH range_external_id AS (
+  SELECT
+    external_id
+  FROM
+    range
+  WHERE
+    iiif_id = $1
+), override_id AS (
+  INSERT INTO iiif_overrides
+    (external_id, notes)
+    SELECT
+      range_external_id.external_id, $2
+    FROM range_external_id
+
+  ON CONFLICT (external_id) DO UPDATE SET notes = $2
+  RETURNING iiif_override_id
+)
+INSERT INTO iiif_range_overrides
+  (iiif_override_id, fov_angle, fov_depth, fov_orientation)
+  SELECT
+    override_id.iiif_override_id, $3, $4, $5
+  FROM override_id
+
+  ON CONFLICT (iiif_override_id) DO UPDATE SET (fov_angle, fov_depth, fov_orientation) = ROW($3, $4, $5)
+`
+    const insertUpdateResult = await client.query(query, [rangeId, notes, fovAngle, fovDepth, fovOrientation])
+    await updateTags(client, rangeId, tags)
+    return {ok: true}
+  })
+})
+
+app.post('/canvas/:canvasId', jsonParser, (req, res) => {
+  dbPoolWorker(res, async client => {
+    const {canvasId} = req.params
+    console.log(req.body)
+    const {body: {notes, tags = [], exclude = false, hole = false}} = req
+    const query = `
+WITH canvas_external_id AS (
+  SELECT
+    external_id
+  FROM
+    canvas
+  WHERE
+    iiif_id = $1
+), override_id AS (
+  INSERT INTO iiif_overrides
+    (external_id, notes)
+    SELECT
+      canvas_external_id.external_id, $2
+    FROM canvas_external_id
+
+  ON CONFLICT (external_id) DO UPDATE SET notes = $2
+  RETURNING iiif_override_id
+)
+INSERT INTO iiif_canvas_overrides
+  (iiif_override_id, exclude, hole)
+  SELECT
+    override_id.iiif_override_id, $3, $4,
+  FROM override_id
+
+  ON CONFLICT (iiif_override_id) DO UPDATE SET (exclude, hole) = ROW($3, $4)
+`
+    const insertUpdateResult = await client.query(query, [canvasId, notes, exclude, hole])
+    await updateTags(client, canvasId, tags)
+    return {ok: true}
+  })
+})
+
 app.post('/canvas/:canvasId/point/:sourceId', jsonParser, (req, res) => {
   dbPoolWorker(res, async client => {
     const {canvasId, sourceId} = req.params
     console.log(req.body)
-    const {body: {priority, notes, point}} = req
+    const {body: {priority, point}} = req
     const query = `
 WITH canvas_external_id AS (
   SELECT
@@ -170,17 +247,39 @@ WITH canvas_external_id AS (
     ON CONFLICT (external_id) DO UPDATE SET external_id = EXCLUDED.external_id
     RETURNING iiif_override_id
 )
-INSERT INTO iiif_canvas_overrides
-  (iiif_override_id, iiif_canvas_override_source_id, priority, notes, point)
+INSERT INTO iiif_canvas_point_overrides
+  (iiif_override_id, iiif_canvas_override_source_id, priority, point)
   SELECT
-    override_id.iiif_override_id, $2, $3, $4, ST_SetSRID(ST_GeomFromGeoJSON($5), 4326)
+    override_id.iiif_override_id, $2, $3, ST_SetSRID(ST_GeomFromGeoJSON($4), 4326)
   FROM override_id
 
   ON CONFLICT (iiif_override_id, iiif_canvas_override_source_id)
-  DO UPDATE SET (priority, notes, point) = ROW($3, $4, CASE WHEN $5 IS NOT NULL THEN ST_SetSRID(ST_GeomFromGeoJSON($5), 4326) ELSE NULL END)
+  DO UPDATE SET (priority, point) = ROW($3, CASE WHEN $4 IS NOT NULL THEN ST_SetSRID(ST_GeomFromGeoJSON($4), 4326) ELSE NULL END)
 `
-    const insertUpdateResult = await client.query(query, [canvasId, sourceId, priority, notes, point])
+    const insertUpdateResult = await client.query(query, [canvasId, sourceId, priority, point])
     return {ok: true}
+  })
+})
+
+app.get('/range/:rangeId', (req, res) => {
+  dbPoolWorker(res, async client => {
+    const {rangeId} = req.params
+    const rangeResult = await client.query("SELECT * FROM range WHERE iiif_id = $1", [rangeId])
+    const rangeOverrideResult = await client.query("SELECT * FROM range_overrides WHERE iiif_id = $1", [rangeId])
+    console.log('rangeOverrideResult', rangeOverrideResult)
+    const firstRow = rangeResult.rows[0]
+    const firstOverrideRow = rangeOverrideResult.rows[0] || {}
+    console.log('firstOverrideRow', firstOverrideRow)
+    return {
+      id: firstRow.iiif_id,
+      label: firstRow.label,
+      type: firstRow.iiif_type_id,
+      viewingHint: firstRow.viewingHint,
+      notes: firstOverrideRow.notes,
+      fovAngle: firstOverrideRow.fov_angle,
+      fovDepth: firstOverrideRow.fov_depth,
+      fovOrientation: firstOverrideRow.fov_orientation,
+    }
   })
 })
 
@@ -194,10 +293,10 @@ WITH road AS (
 canvas_percent_placement AS (
 	SELECT
 		iiif.iiif_id,
-		ST_LineLocatePoint((SELECT geom FROM road), ST_Centroid(ST_Collect(canvas_overrides.point))) AS percentage
+		ST_LineLocatePoint((SELECT geom FROM road), ST_Centroid(ST_Collect(canvas_point_overrides.point))) AS percentage
 	FROM
-		iiif JOIN canvas_overrides ON
-			iiif.external_id = canvas_overrides.external_id
+		iiif JOIN canvas_point_overrides ON
+			iiif.external_id = canvas_point_overrides.external_id
 	GROUP BY
 		iiif.iiif_id
 ),
@@ -246,7 +345,7 @@ SELECT
 				canvas_in_range_list.other_rank
 		END + canvas_in_range_list.start
 	)) AS point,
-	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'notes', notes, 'point', ST_AsGeoJSON(point))) FROM canvas_overrides WHERE external_id = range_canvas.external_id) AS overrides,
+	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'point', ST_AsGeoJSON(point))) FROM canvas_point_overrides WHERE external_id = range_canvas.external_id) AS overrides,
 	range_canvas.*
 FROM
 	range_canvas JOIN canvas_in_range_list ON
