@@ -379,12 +379,17 @@ SELECT
 		END + canvas_in_range_list.start
 	)) AS point,
 	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'point', ST_AsGeoJSON(point))) FROM canvas_point_overrides WHERE external_id = range_canvas.external_id) AS overrides,
+  canvas_overrides.notes,
+  canvas_overrides.exclude,
+  canvas_overrides.hole,
 	range_canvas.*
 FROM
 	range_canvas JOIN canvas_in_range_list ON
     range_canvas.range_id = canvas_in_range_list.range_id
     AND
 		range_canvas.iiif_id = canvas_in_range_list.iiif_id
+  LEFT JOIN canvas_overrides ON
+    range_canvas.iiif_id = canvas_overrides.iiif_id
 ORDER BY
 	range_canvas.iiif_id
 `.replace(/[\r\n ]+/g, ' ')
