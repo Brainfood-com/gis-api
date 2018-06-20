@@ -339,16 +339,20 @@ canvas_range_grouping AS (
 		range_canvas.iiif_id,
 		range_canvas.sequence_num,
 		canvas_percent_placement.percentage,
-		count(canvas_percent_placement.percentage) OVER (ORDER BY range_canvas.sequence_num) AS forward,
-		count(canvas_percent_placement.percentage) OVER (ORDER BY range_canvas.sequence_num DESC) AS reverse
+		canvas_overrides.exclude,
+		count(canvas_percent_placement.percentage) OVER (PARTITION BY canvas_overrides.exclude IS NULL OR canvas_overrides.exclude = false ORDER BY range_canvas.sequence_num) AS forward,
+		count(canvas_percent_placement.percentage) OVER (PARTITION BY canvas_overrides.exclude IS NULL OR canvas_overrides.exclude = false ORDER BY range_canvas.sequence_num DESC) AS reverse
 	FROM
 		range_canvas LEFT JOIN canvas_percent_placement ON
 			range_canvas.iiif_id = canvas_percent_placement.iiif_id
+		LEFT JOIN canvas_overrides ON
+			range_canvas.iiif_id = canvas_overrides.iiif_id
 	WHERE
 		range_canvas.range_id = $1
  	GROUP BY
  		range_canvas.range_id,
  		range_canvas.iiif_id,
+		canvas_overrides.exclude,
  		range_canvas.sequence_num,
  		canvas_percent_placement.percentage
 ),
@@ -367,7 +371,7 @@ canvas_in_range_list AS (
 SELECT
 	canvas_in_range_list.start,
 	canvas_in_range_list.end,
-	ST_AsGeoJSON(ST_LineInterpolatePoint((SELECT road.geom FROM road), (
+	CASE WHEN canvas_overrides.exclude = true THEN NULL ELSE ST_AsGeoJSON(ST_LineInterpolatePoint((SELECT road.geom FROM road), (
 			canvas_in_range_list.end -
 			canvas_in_range_list.start
 		) *
@@ -377,7 +381,7 @@ SELECT
 			ELSE
 				canvas_in_range_list.other_rank
 		END + canvas_in_range_list.start
-	)) AS point,
+	)) END AS point,
 	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'point', ST_AsGeoJSON(point))) FROM canvas_point_overrides WHERE external_id = range_canvas.external_id) AS overrides,
   canvas_overrides.notes,
   canvas_overrides.exclude,
