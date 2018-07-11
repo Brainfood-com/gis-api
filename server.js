@@ -323,28 +323,41 @@ app.get('/range/:rangeId/canvasPoints', (req, res) => {
 WITH road AS (
 	SELECT st_linemerge(st_collect(geom)) AS geom FROM sunset_road_merged
 ),
-canvas_percent_placement AS (
+road_meta AS (
+  SELECT
+    ST_StartPoint(road.geom) AS start_point,
+    gisapp_nearest_edge(ST_StartPoint(road.geom)) AS start_edge,
+    ST_EndPoint(road.geom) AS end_point,
+    gisapp_nearest_edge(ST_EndPoint(road.geom)) AS end_edge
+  FROM
+    road
+),
+canvas_point_override AS (
 	SELECT
 		iiif.iiif_id,
-		ST_LineLocatePoint((SELECT geom FROM road), ST_Centroid(ST_Collect(canvas_point_overrides.point))) AS percentage
+		canvas_point_overrides.point,
+    gisapp_nearest_edge(canvas_point_overrides.point) AS edge
 	FROM
 		iiif JOIN canvas_point_overrides ON
 			iiif.external_id = canvas_point_overrides.external_id
+
 	GROUP BY
-		iiif.iiif_id
+		iiif.iiif_id,
+    canvas_point_overrides.point
 ),
 canvas_range_grouping AS (
 	SELECT
 		range_canvas.range_id,
 		range_canvas.iiif_id,
 		range_canvas.sequence_num,
-		canvas_percent_placement.percentage,
+		canvas_point_override.point,
+		canvas_point_override.edge,
 		canvas_overrides.exclude,
-		count(canvas_percent_placement.percentage) OVER (PARTITION BY canvas_overrides.exclude IS NULL OR canvas_overrides.exclude = false ORDER BY range_canvas.sequence_num) AS forward,
-		count(canvas_percent_placement.percentage) OVER (PARTITION BY canvas_overrides.exclude IS NULL OR canvas_overrides.exclude = false ORDER BY range_canvas.sequence_num DESC) AS reverse
+		count(canvas_point_override.point) OVER (PARTITION BY canvas_overrides.exclude IS NULL OR canvas_overrides.exclude = false ORDER BY range_canvas.sequence_num) AS forward,
+		count(canvas_point_override.point) OVER (PARTITION BY canvas_overrides.exclude IS NULL OR canvas_overrides.exclude = false ORDER BY range_canvas.sequence_num DESC) AS reverse
 	FROM
-		range_canvas LEFT JOIN canvas_percent_placement ON
-			range_canvas.iiif_id = canvas_percent_placement.iiif_id
+		range_canvas LEFT JOIN canvas_point_override ON
+			range_canvas.iiif_id = canvas_point_override.iiif_id
 		LEFT JOIN canvas_overrides ON
 			range_canvas.iiif_id = canvas_overrides.iiif_id
 	WHERE
@@ -354,34 +367,26 @@ canvas_range_grouping AS (
  		range_canvas.iiif_id,
 		canvas_overrides.exclude,
  		range_canvas.sequence_num,
- 		canvas_percent_placement.percentage
+		canvas_point_override.point,
+		canvas_point_override.edge
 ),
 canvas_in_range_list AS (
 	SELECT
-		canvas_range_grouping.range_id,
-		canvas_range_grouping.iiif_id,
-		canvas_range_grouping.percentage,
+		canvas_range_grouping.*,
 		percent_rank() OVER (PARTITION BY canvas_range_grouping.reverse ORDER BY canvas_range_grouping.sequence_num) start_rank,
 		cume_dist() OVER (PARTITION BY canvas_range_grouping.reverse ORDER BY canvas_range_grouping.sequence_num) other_rank,
-		COALESCE(first_value(canvas_range_grouping.percentage) OVER (PARTITION BY canvas_range_grouping.reverse ORDER BY canvas_range_grouping.sequence_num DESC), 1) AS end,
-		COALESCE(first_value(canvas_range_grouping.percentage) OVER (PARTITION BY canvas_range_grouping.forward ORDER BY canvas_range_grouping.sequence_num), 0) AS start
+		COALESCE(first_value(canvas_range_grouping.point) OVER (PARTITION BY canvas_range_grouping.reverse ORDER BY canvas_range_grouping.sequence_num DESC), (SELECT end_point FROM road_meta)) AS end_point,
+		COALESCE(first_value(canvas_range_grouping.point) OVER (PARTITION BY canvas_range_grouping.forward ORDER BY canvas_range_grouping.sequence_num), (SELECT start_point FROM road_meta)) AS start_point
 	FROM
 		canvas_range_grouping
 )
 SELECT
-	canvas_in_range_list.start,
-	canvas_in_range_list.end,
-	CASE WHEN canvas_overrides.exclude = true THEN NULL ELSE ST_AsGeoJSON(ST_LineInterpolatePoint((SELECT road.geom FROM road), (
-			canvas_in_range_list.end -
-			canvas_in_range_list.start
-		) *
-		CASE
-			WHEN canvas_in_range_list.start IS NULL THEN
-				canvas_in_range_list.start_rank
-			ELSE
-				canvas_in_range_list.other_rank
-		END + canvas_in_range_list.start
-	)) END AS point,
+	ST_AsGeoJSON(CASE
+    WHEN canvas_overrides.exclude = true THEN NULL
+    WHEN canvas_in_range_list.point IS NOT NULL THEN canvas_in_range_list.point
+    ELSE ST_LineInterpolatePoint(plan_route(canvas_in_range_list.start_point, canvas_in_range_list.end_point), canvas_in_range_list.other_rank)
+	END) AS point,
+
 	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'point', ST_AsGeoJSON(point))) FROM canvas_point_overrides WHERE external_id = range_canvas.external_id) AS overrides,
   canvas_overrides.notes,
   canvas_overrides.exclude,
@@ -396,13 +401,16 @@ FROM
     range_canvas.iiif_id = canvas_overrides.iiif_id
 ORDER BY
 	range_canvas.iiif_id
-`.replace(/[\r\n ]+/g, ' ')
-    //console.log('query', query)
+`.replace(/[\t\r\n ]+/g, ' ')
+    console.log('query', query)
     const manifestRangeMembersResult = await client.query(query, [rangeId])
     return manifestRangeMembersResult.rows.map(({iiif_id: id, point, overrides, ...row}) => {
       if (overrides) {
-        //console.log('about to parse', overrides.point)
-        overrides.point = JSON.parse(overrides.point || null)
+        overrides.forEach(override => {
+          override.point = JSON.parse(override.point || null)
+        })
+        ////console.log('about to parse', overrides.point)
+        //overrides.point = JSON.parse(overrides.point || null)
       }
       return ({id, point: JSON.parse(point), overrides, ...row})
     })
@@ -481,6 +489,32 @@ app.post('/canvas/:canvasId/point/:sourceId', jsonParser, (req, res) => {
     const {canvasId, sourceId} = req.params
     console.log(req.body)
     const {body: {priority, point}} = req
+    const pointAdjustQuery = `
+
+WITH parsed AS (
+  SELECT ST_SetSRID(ST_GeomFromGeoJSON($1), 4326) AS point
+), fast_query AS (
+  SELECT
+    ST_Distance(wkb_geometry, parsed.point) AS distance,
+    wkb_geometry,
+    ogc_fid
+  FROM
+    tl_2017_06037_edges, parsed
+  ORDER BY
+    wkb_geometry <#> parsed.point
+  LIMIT 100
+)
+SELECT
+  ST_AsGeoJSON(ST_ClosestPoint(wkb_geometry, parsed.point)) AS point
+FROM
+  fast_query, parsed
+ORDER BY
+  distance
+LIMIT 1
+`
+    const adjustResult = await client.query(pointAdjustQuery, [point])
+    const adjustedPoint = adjustResult.rowCount ? adjustResult.rows[0].point : point
+    console.log('adjustResult', adjustResult)
     const query = `
 WITH canvas_external_id AS (
   SELECT
@@ -508,7 +542,7 @@ INSERT INTO iiif_canvas_point_overrides
   ON CONFLICT (iiif_override_id, iiif_canvas_override_source_id)
   DO UPDATE SET (priority, point) = ROW($3, CASE WHEN $4 IS NOT NULL THEN ST_SetSRID(ST_GeomFromGeoJSON($4), 4326) ELSE NULL END)
 `
-    const insertUpdateResult = await client.query(query, [canvasId, sourceId, priority, point])
+    const insertUpdateResult = await client.query(query, [canvasId, sourceId, priority, adjustedPoint])
     return {ok: true}
   })
 })
