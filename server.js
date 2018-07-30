@@ -493,24 +493,18 @@ app.post('/canvas/:canvasId/point/:sourceId', jsonParser, (req, res) => {
 
 WITH parsed AS (
   SELECT ST_SetSRID(ST_GeomFromGeoJSON($1), 4326) AS point
-), fast_query AS (
+),
+nearest_edge AS (
   SELECT
-    ST_Distance(wkb_geometry, parsed.point) AS distance,
-    wkb_geometry,
-    ogc_fid
+    gisapp_nearest_edge(parsed.point) AS edge
   FROM
-    tl_2017_06037_edges, parsed
-  ORDER BY
-    wkb_geometry <#> parsed.point
-  LIMIT 100
+    parsed
 )
 SELECT
-  ST_AsGeoJSON(ST_ClosestPoint(wkb_geometry, parsed.point)) AS point
+  ST_AsGeoJSON(ST_ClosestPoint(tl_2017_06037_edges.wkb_geometry, parsed.point)) AS point
 FROM
-  fast_query, parsed
-ORDER BY
-  distance
-LIMIT 1
+  tl_2017_06037_edges JOIN nearest_edge ON tl_2017_06037_edges.ogc_fid = nearest_edge.edge,
+  parsed
 `
     const adjustResult = await client.query(pointAdjustQuery, [point])
     const adjustedPoint = adjustResult.rowCount ? adjustResult.rows[0].point : point
