@@ -353,8 +353,8 @@ canvas_range_grouping AS (
 		canvas_point_override.point,
 		canvas_point_override.edge,
 		canvas_overrides.exclude,
-		count(canvas_point_override.point) OVER (PARTITION BY canvas_overrides.exclude IS NULL OR canvas_overrides.exclude = false ORDER BY range_canvas.sequence_num) AS forward,
-		count(canvas_point_override.point) OVER (PARTITION BY canvas_overrides.exclude IS NULL OR canvas_overrides.exclude = false ORDER BY range_canvas.sequence_num DESC) AS reverse
+		case when canvas_overrides.exclude is true then -1 else count(canvas_point_override.point) OVER (PARTITION BY canvas_overrides.exclude IS NULL OR canvas_overrides.exclude = false ORDER BY range_canvas.sequence_num) end AS forward,
+		case when canvas_overrides.exclude is true then -1 else count(canvas_point_override.point) OVER (PARTITION BY canvas_overrides.exclude IS NULL OR canvas_overrides.exclude = false ORDER BY range_canvas.sequence_num DESC) end AS reverse
 	FROM
 		range_canvas LEFT JOIN canvas_point_override ON
 			range_canvas.iiif_id = canvas_point_override.iiif_id
