@@ -26,6 +26,7 @@
   },
   "homepage": "https://github.com/Brainfood-com/gis-app#readme",
   "dependencies": {
+    "@turf/turf": "^5.1.6",
     "body-parser": "^1.18.3",
     "cors": "^2.8.4",
     "express": "^4.16.3",

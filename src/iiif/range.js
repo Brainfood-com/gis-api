@@ -1,3 +1,7 @@
+const turfAlong = require('@turf/along')
+const turfBearing = require('@turf/bearing')
+const turfLength = require('@turf/length')
+
 const iiifTags = require('./tags')
 
 exports.getOne = async function getOne(client, rangeId) {
@@ -14,7 +18,7 @@ exports.getOne = async function getOne(client, rangeId) {
     notes: firstOverrideRow.notes,
     fovAngle: firstOverrideRow.fov_angle,
     fovDepth: firstOverrideRow.fov_depth,
-    fovOrientation: firstOverrideRow.fov_orientation,
+    fovOrientation: firstOverrideRow.fov_orientation || 'left',
     tags,
   }
 }
@@ -107,10 +111,10 @@ canvas_range_grouping AS (
 	WHERE
 		range_canvas.range_id = $1
  	GROUP BY
- 		range_canvas.range_id,
- 		range_canvas.iiif_id,
+		range_canvas.range_id,
+		range_canvas.iiif_id,
 		canvas_overrides.exclude,
- 		range_canvas.sequence_num,
+    range_canvas.sequence_num,
 		canvas_point_override.point,
 		canvas_point_override.edge
 ),
@@ -125,10 +129,85 @@ canvas_in_range_list AS (
 		canvas_range_grouping
 )
 SELECT
+  canvas_overrides.notes,
+  canvas_overrides.exclude,
+  canvas_overrides.hole,
+	range_canvas.*,
+  canvas_in_range_list.other_rank,
+  ST_AsGeoJSON(canvas_in_range_list.point) AS point,
+  ST_AsGeoJSON(canvas_in_range_list.start_point) AS start_point,
+  ST_AsGeoJSON(canvas_in_range_list.end_point) AS end_point,
+	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'point', ST_AsGeoJSON(point))) FROM canvas_point_overrides WHERE external_id = range_canvas.external_id) AS overrides
+FROM
+	range_canvas JOIN canvas_in_range_list ON
+    range_canvas.range_id = canvas_in_range_list.range_id
+    AND
+		range_canvas.iiif_id = canvas_in_range_list.iiif_id
+  LEFT JOIN canvas_overrides ON
+    range_canvas.iiif_id = canvas_overrides.iiif_id
+ORDER BY
+	range_canvas.iiif_id
+`.replace(/[\t\r\n ]+/g, ' ')
+  const manifestRangeMembersResult = await client.query(query, [rangeId])
+  const routeLookup = {}
+  manifestRangeMembersResult.rows.forEach(({start_point: startPoint, end_point: endPoint}) => {
+    if (endPoint === startPoint) {
+      return
+    }
+    const startPointNode = routeLookup[startPoint] || (routeLookup[startPoint] = {})
+    if (!startPointNode[endPoint]) {
+      startPointNode[endPoint] = client.query('SELECT ST_AsGeoJSON(plan_route(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326), ST_SetSRID(ST_GeomFromGeoJSON($2), 4326))) AS route', [startPoint, endPoint])
+    }
+  })
+  const pendingPromises = []
+  Object.keys(routeLookup).forEach(startPoint => {
+    const startPointNode = routeLookup[startPoint]
+    Object.keys(startPointNode).map(async endPoint => {
+      const firstRow = (await (startPointNode[endPoint])).rows[0]
+      const route = JSON.parse(firstRow.route)
+      startPointNode[endPoint] = {
+        route,
+        length: turfLength(route),
+      }
+    }).forEach(promise => pendingPromises.push(promise))
+  })
+  await Promise.all(pendingPromises)
+  const validPoints = []
+  const bearingPoints = new Array(2)
+  let previousValidPointResult
+  const canvasPoints = manifestRangeMembersResult.rows.map(({iiif_id: id, point, start_point: startPoint, end_point: endPoint, overrides, other_rank: otherRank, ...row}, index) => {
+    if (overrides) {
+      overrides.forEach(override => {
+        override.point = JSON.parse(override.point || null)
+      })
+    }
+
+    if (point) {
+      point = JSON.parse(point)
+    } else if (!row.exclude && startPoint && endPoint) {
+      const routeData = routeLookup[startPoint][endPoint]
+      point = turfAlong(routeData.route, otherRank * routeData.length).geometry
+    }
+    const result = {id, point, overrides, ...row}
+    if (point) {
+      bearingPoints[1] = [point.coordinates[1], point.coordinates[0]]
+      if (validPoints.length) {
+        validPoints[validPoints.length - 1].bearing = turfBearing(bearingPoints[0], bearingPoints[1])
+      }
+      bearingPoints[0] = bearingPoints[1]
+      validPoints.push(result)
+    }
+    return result
+  })
+  validPoints[validPoints.length - 1].bearing = validPoints[validPoints.length - 2].bearing
+  return canvasPoints
+/*
+
+SELECT
 	ST_AsGeoJSON(CASE
     WHEN canvas_overrides.exclude = true THEN NULL
     WHEN canvas_in_range_list.point IS NOT NULL THEN canvas_in_range_list.point
-    ELSE ST_LineInterpolatePoint(plan_route(canvas_in_range_list.start_point, canvas_in_range_list.end_point), canvas_in_range_list.other_rank)
+    ELSE ST_LineInterpolatePoint(canvas_range_route.route, canvas_in_range_list.other_rank)
 	END) AS point,
 
 	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'point', ST_AsGeoJSON(point))) FROM canvas_point_overrides WHERE external_id = range_canvas.external_id) AS overrides,
@@ -143,6 +222,12 @@ FROM
 		range_canvas.iiif_id = canvas_in_range_list.iiif_id
   LEFT JOIN canvas_overrides ON
     range_canvas.iiif_id = canvas_overrides.iiif_id
+  LEFT JOIN canvas_range_route ON
+    canvas_in_range_list.range_id = canvas_range_route.range_id
+    AND
+    canvas_in_range_list.start_point = canvas_range_route.start_point
+    AND
+    canvas_in_range_list.end_point = canvas_range_route.end_point
 ORDER BY
 	range_canvas.iiif_id
 `.replace(/[\t\r\n ]+/g, ' ')
@@ -158,9 +243,14 @@ ORDER BY
     }
     return ({id, point: JSON.parse(point), overrides, ...row})
   })
+  */
 }
 
 exports.getGeoJSON = async function getGeoJSON(client, rangeId) {
+  const range = await exports.getOne(client, rangeId)
+  const {fovOrientation} = range
+
+
   const canvasPoints = await exports.getCanvasPoints(client, rangeId)
   return {
     type: 'FeatureCollection',
@@ -177,18 +267,18 @@ exports.getGeoJSON = async function getGeoJSON(client, rangeId) {
       camerainfo: '?'
     },
     features: canvasPoints.map(canvasPoint => {
-      const point = canvasPoint.point
-      const streetview = point ? `https://maps.google.com/maps?q=${point.coordinates[1]},${point.coordinates[0]}&cbll=${point.coordinates[1]},${point.coordinates[0]}&layer=c` : null
+      const {bearing, point} = canvasPoint
+      const cameraDirection = (bearing + (fovOrientation === 'left' ? 0 : 180)) % 360
+      const streetview = point ? `https://maps.google.com/maps/@?api=1&map_action=pano&viewpoint=${point.coordinates[1]},${point.coordinates[0]}&heading=${cameraDirection}` : null
         return {
           type: 'Feature',
           geometry: point,
           properties: {
             filename: canvasPoint.image,
-            bearing: '?',
+            bearing,
             distance: '?',
             date: '?',
             time: '?',
-            bearing: '?',
             distance: '?',
             streetview,
             streetaddress: '?',
