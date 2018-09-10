@@ -182,6 +182,11 @@ app.get('/range/:rangeId/canvasPoints', (req, res) => {
   dbPoolWorker(res, client => iiifRange.getCanvasPoints(client, rangeId))
 })
 
+app.get('/range/:rangeId/geoJSON', (req, res) => {
+  const {rangeId} = req.params
+  dbPoolWorker(res, client => iiifRange.getGeoJSON(client, rangeId))
+})
+
 app.get('/canvas/:canvasId', (req, res) => {
   const {canvasId} = req.params
   dbPoolWorker(res, client => iiifCanvas.getOne(client, canvasId))

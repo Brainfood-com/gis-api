@@ -159,3 +159,68 @@ ORDER BY
     return ({id, point: JSON.parse(point), overrides, ...row})
   })
 }
+
+exports.getGeoJSON = async function getGeoJSON(client, rangeId) {
+  const canvasPoints = await exports.getCanvasPoints(client, rangeId)
+  return {
+    type: 'FeatureCollection',
+    metadata: {
+      imagecount: canvasPoints.length,
+      date: '?',
+      starttime: '?',
+      stoptime: '?',
+      startintersection: '?',
+      stopintersection: '?',
+      photographer: '?',
+      driver: '?',
+      subjectstreet: '?',
+      camerainfo: '?'
+    },
+    features: canvasPoints.map(canvasPoint => {
+      const point = canvasPoint.point
+      const streetview = point ? `https://maps.google.com/maps?q=${point.coordinates[1]},${point.coordinates[0]}&cbll=${point.coordinates[1]},${point.coordinates[0]}&layer=c` : null
+        return {
+          type: 'Feature',
+          geometry: point,
+          properties: {
+            filename: canvasPoint.image,
+            bearing: '?',
+            distance: '?',
+            date: '?',
+            time: '?',
+            bearing: '?',
+            distance: '?',
+            streetview,
+            streetaddress: '?',
+            structureextant: '?',
+            yearbuilt: '?',
+            zoning: '?',
+            ocr: [
+              '?',
+            ],
+            tags: [
+              '?',
+            ],
+            colormetadata: {
+              hsv: '?',
+              grey: '',
+            },
+            taxlots: [
+              {
+                ain: 'XXXXX01',
+                yearbuilt: 1951,
+              },
+              {
+                ain: 'XXXXX02',
+                yearbuilt: 1951,
+              },
+              {
+                ain: 'XXXXX03',
+                yearbuilt: 1968,
+              }
+            ]
+          },
+        }
+    }),
+  }
+}
