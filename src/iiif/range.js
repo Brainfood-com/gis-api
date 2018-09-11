@@ -123,8 +123,8 @@ canvas_in_range_list AS (
 		canvas_range_grouping.*,
 		percent_rank() OVER (PARTITION BY canvas_range_grouping.reverse ORDER BY canvas_range_grouping.sequence_num) start_rank,
 		cume_dist() OVER (PARTITION BY canvas_range_grouping.reverse ORDER BY canvas_range_grouping.sequence_num) other_rank,
-		COALESCE(first_value(canvas_range_grouping.point) OVER (PARTITION BY canvas_range_grouping.reverse ORDER BY canvas_range_grouping.sequence_num DESC), (SELECT end_point FROM road_meta)) AS end_point,
-		COALESCE(first_value(canvas_range_grouping.point) OVER (PARTITION BY canvas_range_grouping.forward ORDER BY canvas_range_grouping.sequence_num), (SELECT start_point FROM road_meta)) AS start_point
+		first_value(canvas_range_grouping.point) OVER (PARTITION BY canvas_range_grouping.reverse ORDER BY canvas_range_grouping.sequence_num DESC) AS end_point,
+		first_value(canvas_range_grouping.point) OVER (PARTITION BY canvas_range_grouping.forward ORDER BY canvas_range_grouping.sequence_num) AS start_point
 	FROM
 		canvas_range_grouping
 )
@@ -151,7 +151,7 @@ ORDER BY
   const manifestRangeMembersResult = await client.query(query, [rangeId])
   const routeLookup = {}
   manifestRangeMembersResult.rows.forEach(({start_point: startPoint, end_point: endPoint}) => {
-    if (endPoint === startPoint) {
+    if (!startPoint || !endPoint || endPoint === startPoint) {
       return
     }
     const startPointNode = routeLookup[startPoint] || (routeLookup[startPoint] = {})
@@ -199,7 +199,9 @@ ORDER BY
     }
     return result
   })
-  validPoints[validPoints.length - 1].bearing = validPoints[validPoints.length - 2].bearing
+  if (validPoints.length > 1) {
+    validPoints[validPoints.length - 1].bearing = validPoints[validPoints.length - 2].bearing
+  }
   return canvasPoints
 /*
 
