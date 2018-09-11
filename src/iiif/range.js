@@ -190,7 +190,7 @@ ORDER BY
     }
     const result = {id, point, overrides, ...row}
     if (point) {
-      bearingPoints[1] = [point.coordinates[1], point.coordinates[0]]
+      bearingPoints[1] = [point.coordinates[0], point.coordinates[1]]
       if (validPoints.length) {
         validPoints[validPoints.length - 1].bearing = turfBearing(bearingPoints[0], bearingPoints[1])
       }
