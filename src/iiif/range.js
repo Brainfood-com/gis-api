@@ -68,18 +68,7 @@ exports.getOverrides = async function getOverrides(client, iiifOverrideId) {
 
 exports.getCanvasPoints = async function getCanvasPoints(client, rangeId) {
   const query = `
-WITH road AS (
-	SELECT st_linemerge(st_collect(geom)) AS geom FROM sunset_road_merged
-),
-road_meta AS (
-  SELECT
-    ST_StartPoint(road.geom) AS start_point,
-    gisapp_nearest_edge(ST_StartPoint(road.geom)) AS start_edge,
-    ST_EndPoint(road.geom) AS end_point,
-    gisapp_nearest_edge(ST_EndPoint(road.geom)) AS end_edge
-  FROM
-    road
-),
+WITH
 canvas_point_override AS (
 	SELECT
 		iiif.iiif_id,
