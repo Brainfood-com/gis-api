@@ -69,72 +69,25 @@ export async function getOverrides(client, iiifOverrideId) {
 
 export async function getCanvasPoints(client, rangeId) {
   const query = `
-WITH
-canvas_point_override AS (
-	SELECT
-		iiif.iiif_id,
-		canvas_point_overrides.point,
-    gisapp_nearest_edge(canvas_point_overrides.point) AS edge
-	FROM
-		iiif JOIN canvas_point_overrides ON
-			iiif.external_id = canvas_point_overrides.external_id
-
-	GROUP BY
-		iiif.iiif_id,
-    canvas_point_overrides.point
-),
-canvas_range_grouping AS (
-	SELECT
-		range_canvas.range_id,
-		range_canvas.iiif_id,
-		range_canvas.sequence_num,
-		canvas_point_override.point,
-		canvas_point_override.edge,
-		canvas_overrides.exclude,
-		case when canvas_overrides.exclude is true then -1 else count(canvas_point_override.point) OVER (PARTITION BY canvas_overrides.exclude IS NULL OR canvas_overrides.exclude = false ORDER BY range_canvas.sequence_num) end AS forward,
-		case when canvas_overrides.exclude is true then -1 else count(canvas_point_override.point) OVER (PARTITION BY canvas_overrides.exclude IS NULL OR canvas_overrides.exclude = false ORDER BY range_canvas.sequence_num DESC) end AS reverse
-	FROM
-		range_canvas LEFT JOIN canvas_point_override ON
-			range_canvas.iiif_id = canvas_point_override.iiif_id
-		LEFT JOIN canvas_overrides ON
-			range_canvas.iiif_id = canvas_overrides.iiif_id
-	WHERE
-		range_canvas.range_id = $1
- 	GROUP BY
-		range_canvas.range_id,
-		range_canvas.iiif_id,
-		canvas_overrides.exclude,
-    range_canvas.sequence_num,
-		canvas_point_override.point,
-		canvas_point_override.edge
-),
-canvas_in_range_list AS (
-	SELECT
-		canvas_range_grouping.*,
-		percent_rank() OVER (PARTITION BY canvas_range_grouping.reverse ORDER BY canvas_range_grouping.sequence_num) start_rank,
-		cume_dist() OVER (PARTITION BY canvas_range_grouping.reverse ORDER BY canvas_range_grouping.sequence_num) other_rank,
-		first_value(canvas_range_grouping.point) OVER (PARTITION BY canvas_range_grouping.reverse ORDER BY canvas_range_grouping.sequence_num DESC) AS end_point,
-		first_value(canvas_range_grouping.point) OVER (PARTITION BY canvas_range_grouping.forward ORDER BY canvas_range_grouping.sequence_num) AS start_point
-	FROM
-		canvas_range_grouping
-)
 SELECT
   canvas_overrides.notes,
   canvas_overrides.exclude,
   canvas_overrides.hole,
 	range_canvas.*,
-  canvas_in_range_list.other_rank,
-  ST_AsGeoJSON(canvas_in_range_list.point) AS point,
-  ST_AsGeoJSON(canvas_in_range_list.start_point) AS start_point,
-  ST_AsGeoJSON(canvas_in_range_list.end_point) AS end_point,
+  routing_canvas_range_list.other_rank,
+  ST_AsGeoJSON(routing_canvas_range_list.point) AS point,
+  ST_AsGeoJSON(routing_canvas_range_list.start_point) AS start_point,
+  ST_AsGeoJSON(routing_canvas_range_list.end_point) AS end_point,
 	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'point', ST_AsGeoJSON(point))) FROM canvas_point_overrides WHERE external_id = range_canvas.external_id) AS overrides
 FROM
-	range_canvas JOIN canvas_in_range_list ON
-    range_canvas.range_id = canvas_in_range_list.range_id
+	range_canvas JOIN routing_canvas_range_list ON
+    range_canvas.range_id = routing_canvas_range_list.range_id
     AND
-		range_canvas.iiif_id = canvas_in_range_list.iiif_id
+		range_canvas.iiif_id = routing_canvas_range_list.iiif_id
   LEFT JOIN canvas_overrides ON
     range_canvas.iiif_id = canvas_overrides.iiif_id
+WHERE
+	range_canvas.range_id = $1
 ORDER BY
 	range_canvas.iiif_id
 `.replace(/[\t\r\n ]+/g, ' ')
