@@ -43,14 +43,18 @@ const pool = new Pool({
 
 //    this._pgConnection = new Client({
 
-async function dbPoolWorker(res, handler) {
+export async function dbPoolWorker(handler) {
+  const client = await pool.connect()
   try {
-    const client = await pool.connect()
-    try {
-      res.send(await handler(client))
-    } finally {
-      client.release()
-    }
+    return await handler(client)
+  } finally {
+    client.release()
+  }
+}
+
+export async function dbResPoolWorker(res, handler) {
+  try {
+    res.send(await dbPoolWorker(handler))
   } catch (e) {
     console.error(e)
     res.status(500).send('error')
@@ -112,26 +116,26 @@ const app = express()
 app.use(cors())
 
 app.post('/_db/load-all', jsonParser, (req, res) => {
-  dbPoolWorker(res, client => loadAllOverrides(client))
+  dbResPoolWorker(res, client => loadAllOverrides(client))
 })
 
 app.post('/_db/save-all', jsonParser, (req, res) => {
-  dbPoolWorker(res, client => saveAllOverrides(client))
+  dbResPoolWorker(res, client => saveAllOverrides(client))
 })
 
 app.get('/collection', async (req, res) => {
-  dbPoolWorker(res, client => iiifCollection.getAll(client))
+  dbResPoolWorker(res, client => iiifCollection.getAll(client))
 })
 
 app.get('/collection/:collectionId', (req, res) => {
   const {collectionId} = req.params
-  dbPoolWorker(res, client => iiifCollection.getOne(client, collectionId))
+  dbResPoolWorker(res, client => iiifCollection.getOne(client, collectionId))
 })
 
 app.post('/collection/:collectionId', jsonParser, (req, res) => {
   const {collectionId} = req.params
   const {body: {notes, tags}} = req
-  dbPoolWorker(res, client => {
+  dbResPoolWorker(res, client => {
     return iiifCollection.updateOne(client, collectionId, {notes, tags}).then(result => {
       saveOverridesToDisk(client, collectionId)
     })
@@ -144,13 +148,13 @@ app.get('/manifest', (req, res) => {
 
 app.get('/manifest/:manifestId', (req, res) => {
   const {manifestId} = req.params
-  dbPoolWorker(res, client => iiifManifest.getOne(client, manifestId))
+  dbResPoolWorker(res, client => iiifManifest.getOne(client, manifestId))
 })
 
 app.post('/manifest/:manifestId', jsonParser, (req, res) => {
   const {manifestId} = req.params
   const {body: {notes, tags}} = req
-  dbPoolWorker(res, client => {
+  dbResPoolWorker(res, client => {
     return iiifManifest.updateOne(client, manifestId, {notes, tags}).then(result => {
       saveOverridesToDisk(client, manifestId)
     })
@@ -159,18 +163,18 @@ app.post('/manifest/:manifestId', jsonParser, (req, res) => {
 
 app.get('/manifest/:manifestId/structures', (req, res) => {
   const {manifestId} = req.params
-  dbPoolWorker(res, client => iiifManifest.getStructures(client, manifestId))
+  dbResPoolWorker(res, client => iiifManifest.getStructures(client, manifestId))
 })
 
 app.get('/range/:rangeId', (req, res) => {
   const {rangeId} = req.params
-  dbPoolWorker(res, client => iiifRange.getOne(client, rangeId))
+  dbResPoolWorker(res, client => iiifRange.getOne(client, rangeId))
 })
 
 app.post('/range/:rangeId', jsonParser, (req, res) => {
   const {rangeId} = req.params
   const {body: {notes, fovAngle, fovDepth, fovOrientation, tags}} = req
-  dbPoolWorker(res, client => {
+  dbResPoolWorker(res, client => {
     return iiifRange.updateOne(client, rangeId, {notes, fovAngle, fovDepth, fovOrientation, tags}).then(result => {
       saveOverridesToDisk(client, rangeId)
     })
@@ -179,23 +183,23 @@ app.post('/range/:rangeId', jsonParser, (req, res) => {
 
 app.get('/range/:rangeId/canvasPoints', (req, res) => {
   const {rangeId} = req.params
-  dbPoolWorker(res, client => iiifRange.getCanvasPoints(client, rangeId))
+  dbResPoolWorker(res, client => iiifRange.getCanvasPoints(client, rangeId))
 })
 
 app.get('/range/:rangeId/geoJSON', (req, res) => {
   const {rangeId} = req.params
-  dbPoolWorker(res, client => iiifRange.getGeoJSON(client, rangeId))
+  dbResPoolWorker(res, client => iiifRange.getGeoJSON(client, rangeId))
 })
 
 app.get('/canvas/:canvasId', (req, res) => {
   const {canvasId} = req.params
-  dbPoolWorker(res, client => iiifCanvas.getOne(client, canvasId))
+  dbResPoolWorker(res, client => iiifCanvas.getOne(client, canvasId))
 })
 
 app.post('/canvas/:canvasId', jsonParser, (req, res) => {
   const {canvasId} = req.params
   const {body: {notes, tags = [], exclude = false, hole = false}} = req
-  dbPoolWorker(res, client => {
+  dbResPoolWorker(res, client => {
     return iiifCanvas.updateOne(client, canvasId, {notes, exclude, hole, tags}).then(result => {
       saveOverridesToDisk(client, canvasId)
     })
@@ -205,7 +209,7 @@ app.post('/canvas/:canvasId', jsonParser, (req, res) => {
 app.post('/canvas/:canvasId/point/:sourceId', jsonParser, (req, res) => {
   const {canvasId, sourceId} = req.params
   const {body: {priority, point}} = req
-  dbPoolWorker(res, client => {
+  dbResPoolWorker(res, client => {
     return iiifCanvas.point.updateOne(client, canvasId, sourceId, {priority, point}).then(result => {
       saveOverridesToDisk(client, canvasId)
     })
@@ -214,7 +218,7 @@ app.post('/canvas/:canvasId/point/:sourceId', jsonParser, (req, res) => {
 
 app.delete('/canvas/:canvasId/point/:sourceId', jsonParser, (req, res) => {
   const {canvasId, sourceId} = req.params
-  dbPoolWorker(res, client => {
+  dbResPoolWorker(res, client => {
     return iiifCanvas.point.deleteOne(client, canvasId, sourceId).then(result => {
       saveOverridesToDisk(client, canvasId)
     })
