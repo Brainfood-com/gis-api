@@ -1,13 +1,13 @@
-const turfAlong = require('@turf/along')
-const turfBearing = require('@turf/bearing')
-const turfLength = require('@turf/length')
+import turfAlong from '@turf/along'
+import turfBearing from '@turf/bearing'
+import turfLength from '@turf/length'
 
-const iiifTags = require('./tags')
+import {getTags, updateTags} from './tags'
 
-exports.getOne = async function getOne(client, rangeId) {
+export async function getOne(client, rangeId) {
   const rangeResult = await client.query("SELECT * FROM range WHERE iiif_id = $1", [rangeId])
   const rangeOverrideResult = await client.query("SELECT * FROM range_overrides WHERE iiif_id = $1", [rangeId])
-  const tags = await iiifTags.getOne(client, rangeId)
+  const tags = await getTags(client, rangeId)
   const firstRow = rangeResult.rows[0]
   const firstOverrideRow = rangeOverrideResult.rows[0] || {}
   return {
@@ -23,7 +23,7 @@ exports.getOne = async function getOne(client, rangeId) {
   }
 }
 
-exports.updateOne = exports.setOverrides = async function updateOne(client, rangeId, {notes, fovAngle, fovDepth, fovOrientation, tags}) {
+export async function updateOne(client, rangeId, {notes, fovAngle, fovDepth, fovOrientation, tags}) {
   const query = `
 WITH range_external_id AS (
   SELECT
@@ -51,11 +51,12 @@ INSERT INTO iiif_range_overrides
   ON CONFLICT (iiif_override_id) DO UPDATE SET (fov_angle, fov_depth, fov_orientation) = ROW($3, $4, $5)
 `
   const insertUpdateResult = await client.query(query, [rangeId, notes, fovAngle, fovDepth, fovOrientation])
-  await iiifTags.updateOne(client, rangeId, tags)
+  await updateTags(client, rangeId, tags)
   return {ok: true}
 }
+export const setOverrides = updateOne
 
-exports.getOverrides = async function getOverrides(client, iiifOverrideId) {
+export async function getOverrides(client, iiifOverrideId) {
   const rangeInfo = await client.query('SELECT fov_angle, fov_depth, fov_orientation FROM iiif_range_overrides WHERE iiif_override_id = $1', [iiifOverrideId])
   const {fov_angle, fov_depth, fov_orientation} = rangeInfo.rows[0] || {}
   console.log('range:getOverrides')
@@ -66,7 +67,7 @@ exports.getOverrides = async function getOverrides(client, iiifOverrideId) {
   }
 }
 
-exports.getCanvasPoints = async function getCanvasPoints(client, rangeId) {
+export async function getCanvasPoints(client, rangeId) {
   const query = `
 WITH
 canvas_point_override AS (
@@ -237,12 +238,12 @@ ORDER BY
   */
 }
 
-exports.getGeoJSON = async function getGeoJSON(client, rangeId) {
+export async function getGeoJSON(client, rangeId) {
   const range = await exports.getOne(client, rangeId)
   const {fovOrientation} = range
 
 
-  const canvasPoints = await exports.getCanvasPoints(client, rangeId)
+  const canvasPoints = await getCanvasPoints(client, rangeId)
   return {
     type: 'FeatureCollection',
     metadata: {

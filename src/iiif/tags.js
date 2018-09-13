@@ -1,5 +1,5 @@
 
-exports.getOne = async function getTags(client, iiifId) {
+export async function getTags(client, iiifId) {
   const query = `
 SELECT
   b.tag
@@ -21,7 +21,7 @@ ORDER BY
   return tagsResult.rows.map(row => row.tag)
 }
 
-exports.updateOne = async function updateTags(client, iiifId, tags) {
+export async function updateTags(client, iiifId, tags) {
   const query = `
 WITH iiif_object AS (
   SELECT iiif_type_id, external_id FROM iiif WHERE iiif_id = $1

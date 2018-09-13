@@ -1,21 +1,21 @@
-const iiifTags = require('./tags')
+import {getTags, updateTags} from './tags'
 
 const type = 'sc:Collection'
 
-exports.getAll = async function getAll(client) {
+export async function getAll(client) {
   const collectionResult = await client.query("SELECT iiif_id, label FROM iiif WHERE iiif_type_id = $1", [type])
   return collectionResult.rows.map(row => {
     return {id: row.iiif_id, label: row.label, type}
   })
 }
 
-exports.getOne = async function getOne(client, collectionId) {
+export async function getOne(client, collectionId) {
   const collectionResult = await client.query("SELECT iiif_id, label FROM iiif WHERE iiif_type_id = $1 AND iiif_id = $2", [type, collectionId])
   const collectionOverrideResult = await client.query("SELECT * FROM collection_overrides WHERE iiif_id = $1", [collectionId])
   const firstRow = collectionResult.rows[0]
   const firstOverrideRow = collectionOverrideResult.rows[0] || {}
   const assocResult = await client.query("SELECT a.iiif_id_to, a.iiif_assoc_type_id, b.label, b.iiif_type_id FROM iiif_assoc a JOIN iiif b ON a.iiif_id_to = b.iiif_id WHERE a.iiif_id_from = $1 ORDER BY a.sequence_num, b.label", [collectionId])
-  const tags = await iiifTags.getOne(client, collectionId)
+  const tags = await getTags(client, collectionId)
   return {
     id: firstRow.iiif_id,
     label: firstRow.label,
@@ -28,7 +28,7 @@ exports.getOne = async function getOne(client, collectionId) {
   }
 }
 
-exports.updateOne = exports.setOverrides = async function updateOne(client, collectionId, {notes, tags}) {
+export async function updateOne(client, collectionId, {notes, tags}) {
   const query = `
 WITH collection_external_id AS (
   SELECT
@@ -47,10 +47,12 @@ INSERT INTO iiif_overrides
   ON CONFLICT (external_id) DO UPDATE SET notes = $2
 `
   const insertUpdateResult = await client.query(query, [collectionId, notes])
-  await iiifTags.updateOne(client, collectionId, tags)
+  await updateTags(client, collectionId, tags)
   return {ok: true}
 }
 
-exports.getOverrides = async function getOverrides(client, iiifOverrideId) {
+export const setOverrides = updateOne
+
+export async function getOverrides(client, iiifOverrideId) {
   return {}
 }

@@ -8,7 +8,7 @@
     "url": "git+https://github.com/Brainfood-com/gis-app.git"
   },
   "scripts": {
-    "dev": "node server.js"
+    "dev": "node -r esm server.js"
   },
   "keywords": [],
   "author": "",
@@ -29,6 +29,7 @@
     "@turf/turf": "^5.1.6",
     "body-parser": "^1.18.3",
     "cors": "^2.8.4",
+    "esm": "^3.0.82",
     "express": "^4.16.3",
     "fs-extra": "^7.0.0",
     "node-dir": "^0.1.17",

@@ -1,9 +1,9 @@
-const iiifTags = require('./tags')
+import {getTags, updateTags} from './tags'
 
-exports.getOne = async function getOne(client, manifestId) {
+export async function getOne(client, manifestId) {
   const manifestResult = await client.query("SELECT * FROM manifest WHERE iiif_id = $1", [manifestId])
   const manifestOverrideResult = await client.query("SELECT * FROM manifest_overrides WHERE iiif_id = $1", [manifestId])
-  const tags = await iiifTags.getOne(client, manifestId)
+  const tags = await getTags(client, manifestId)
   const firstRow = manifestResult.rows[0]
   const firstOverrideRow = manifestOverrideResult.rows[0] || {}
   return {
@@ -20,7 +20,7 @@ exports.getOne = async function getOne(client, manifestId) {
   }
 }
 
-exports.updateOne = exports.setOverrides = async function updateOne(client, manifestId, {notes, tags}) {
+export async function updateOne(client, manifestId, {notes, tags}) {
   const query = `
 WITH manifest_external_id AS (
   SELECT
@@ -39,15 +39,16 @@ INSERT INTO iiif_overrides
   ON CONFLICT (external_id) DO UPDATE SET notes = $2
 `
   const insertUpdateResult = await client.query(query, [manifestId, notes])
-  await iiifTags.updateOne(client, manifestId, tags)
+  await updateTags(client, manifestId, tags)
   return {ok: true}
 }
+export const setOverrides = updateOne
 
-exports.getOverrides = async function getOverrides(client, iiifOverrideId) {
+export async function getOverrides(client, iiifOverrideId) {
   return {}
 }
 
-exports.getStructures = async function getStructures(client, manifestId) {
+export async function getStructures(client, manifestId) {
   const manifestRangesResult = await client.query("SELECT a.iiif_id_to AS range_id, b.label, c.viewing_hint FROM iiif_assoc a JOIN iiif b ON a.iiif_id_to = b.iiif_id AND a.iiif_assoc_type_id = 'sc:Range' JOIN iiif_range c ON b.iiif_id = c.iiif_id WHERE a.iiif_id_from = $1 ORDER BY a.sequence_num, b.label", [manifestId])
   const manifestRangeMembersResult = await client.query(`
 WITH has_point_override AS (

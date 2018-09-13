@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 
-const fse = require('fs-extra')
-const path = require('path')
-const dir = require('node-dir')
-const express = require('express')
-const cors = require('cors')
-const bodyParser = require('body-parser')
-const { Client, Pool } = require('pg')
+import fse from 'fs-extra'
+import path from 'path'
+import dir from 'node-dir'
+import express from 'express'
+import cors from 'cors'
+import bodyParser from 'body-parser'
+import { Client, Pool } from 'pg'
 
-const iiifTags = require('./src/iiif/tags')
-const iiifCollection = require('./src/iiif/collection')
-const iiifManifest = require('./src/iiif/manifest')
-const iiifRange = require('./src/iiif/range')
-const iiifCanvas = require('./src/iiif/canvas')
+import {getTags, updateTags} from './src/iiif/tags'
+import * as iiifCollection from './src/iiif/collection'
+import * as iiifManifest from './src/iiif/manifest'
+import * as iiifRange from './src/iiif/range'
+import * as iiifCanvas from './src/iiif/canvas'
 
 const getOverrides = {
   'sc:Collection': iiifCollection.getOverrides,
@@ -68,7 +68,7 @@ async function saveOverridesToDisk(client, iiifId) {
     external_id,
     iiif_type_id,
     notes,
-    tags: await iiifTags.getOne(client, iiifId),
+    tags: await getTags(client, iiifId),
     _overrides: await getOverrides[iiif_type_id](client, iiif_override_id)
   }
   console.log('saveData', JSON.stringify(dataToSave, null, 1))

@@ -1,9 +1,9 @@
-const iiifTags = require('./tags')
+import {getTags, updateTags} from './tags'
 
-exports.getOne = async function getOne(client, canvasId) {
+export async function getOne(client, canvasId) {
   const canvasResult = await client.query("SELECT * FROM canvas WHERE iiif_id = $1", [canvasId])
   const canvasOverrideResult = await client.query("SELECT * FROM canvas_overrides WHERE iiif_id = $1", [canvasId])
-  const tags = await iiifTags.getOne(client, canvasId)
+  const tags = await getTags(client, canvasId)
   const firstRow = canvasResult.rows[0]
   const firstOverrideRow = canvasOverrideResult.rows[0] || {}
   return {
@@ -23,7 +23,7 @@ exports.getOne = async function getOne(client, canvasId) {
   }
 }
 
-exports.updateOne = async function updateOne(client, canvasId, {notes, exclude, hole, tags}) {
+export async function updateOne(client, canvasId, {notes, exclude, hole, tags}) {
   const query = `
 WITH canvas_external_id AS (
   SELECT
@@ -51,11 +51,11 @@ INSERT INTO iiif_canvas_overrides
   ON CONFLICT (iiif_override_id) DO UPDATE SET (exclude, hole) = ROW($3, $4)
 `
   const insertUpdateResult = await client.query(query, [canvasId, notes, exclude, hole])
-  await iiifTags.updateOne(client, canvasId, tags)
+  await updateTags(client, canvasId, tags)
   return {ok: true}
 }
 
-exports.getOverrides = async function getOverrides(client, iiifOverrideId) {
+export async function getOverrides(client, iiifOverrideId) {
   const canvasInfo = await client.query('SELECT exclude, hole FROM iiif_canvas_overrides WHERE iiif_override_id = $1', [iiifOverrideId])
   const {exclude, hole} = canvasInfo.rows[0] || {}
   const canvasPointInfo = await client.query('SELECT iiif_canvas_override_source_id, priority, ST_ASGeoJSON(point) point FROM iiif_canvas_point_overrides WHERE iiif_override_id = $1', [iiifOverrideId])
@@ -72,13 +72,13 @@ exports.getOverrides = async function getOverrides(client, iiifOverrideId) {
   }
 }
 
-exports.setOverrides = async function setOverrides(client, canvasId, {notes, exclude, hole, tags, points}) {
+export async function setOverrides(client, canvasId, {notes, exclude, hole, tags, points}) {
   await exports.updateOne(client, canvasId, {notes, exclude, hole, tags})
   await Promise.all(points.map(({source, priority, point}) => exports.point.updateOne(client, canvasId, source, {priority, point})))
 }
 
-exports.point = {}
-exports.point.updateOne = async function updateOne(client, canvasId, sourceId, {priority, point}) {
+export const point = {}
+point.updateOne = async function updateOne(client, canvasId, sourceId, {priority, point}) {
   const pointAdjustQuery = `
 WITH parsed AS (
   SELECT ST_SetSRID(ST_GeomFromGeoJSON($1), 4326) AS point
@@ -128,7 +128,7 @@ INSERT INTO iiif_canvas_point_overrides
   return {ok: true}
 }
 
-exports.point.deleteOne = async function deleteOne(client, canvasId, sourceId) {
+point.deleteOne = async function deleteOne(client, canvasId, sourceId) {
   const query = `
 WITH override_id AS (
   SELECT
