@@ -4,6 +4,8 @@ import turfLength from '@turf/length'
 
 import {getTags, updateTags} from './tags'
 
+import {dbPoolWorker} from '../../server'
+
 export async function getOne(client, rangeId) {
   const rangeResult = await client.query("SELECT * FROM range WHERE iiif_id = $1", [rangeId])
   const rangeOverrideResult = await client.query("SELECT * FROM range_overrides WHERE iiif_id = $1", [rangeId])
@@ -93,26 +95,29 @@ ORDER BY
 `.replace(/[\t\r\n ]+/g, ' ')
   const manifestRangeMembersResult = await client.query(query, [rangeId])
   const routeLookup = {}
+  const pendingPromises = []
   manifestRangeMembersResult.rows.forEach(({start_point: startPoint, end_point: endPoint}) => {
     if (!startPoint || !endPoint || endPoint === startPoint) {
       return
     }
     const startPointNode = routeLookup[startPoint] || (routeLookup[startPoint] = {})
     if (!startPointNode[endPoint]) {
-      startPointNode[endPoint] = client.query('SELECT ST_AsGeoJSON(plan_route(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326), ST_SetSRID(ST_GeomFromGeoJSON($2), 4326))) AS route', [startPoint, endPoint])
-    }
-  })
-  const pendingPromises = []
-  Object.keys(routeLookup).forEach(startPoint => {
-    const startPointNode = routeLookup[startPoint]
-    Object.keys(startPointNode).map(async endPoint => {
-      const firstRow = (await (startPointNode[endPoint])).rows[0]
-      const route = JSON.parse(firstRow.route)
-      startPointNode[endPoint] = {
-        route,
-        length: turfLength(route),
+      async function getRoute() {
+        return dbPoolWorker(async client => {
+          const result = await client.query('SELECT ST_AsGeoJSON(plan_route(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326), ST_SetSRID(ST_GeomFromGeoJSON($2), 4326))) AS route', [startPoint, endPoint])
+          return result.rows[0]
+        })
       }
-    }).forEach(promise => pendingPromises.push(promise))
+      const promise = startPointNode[endPoint] = getRoute().then(firstRow => {
+        const route = JSON.parse(firstRow.route)
+        startPointNode[endPoint] = {
+          route,
+          length: turfLength(route),
+        }
+      })
+      pendingPromises.push(promise)
+
+    }
   })
   await Promise.all(pendingPromises)
   const validPoints = []
