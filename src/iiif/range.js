@@ -69,87 +69,82 @@ export async function getOverrides(client, iiifOverrideId) {
   }
 }
 
+export async function calculateRoutes(client, ...rangeIds) {
+  let query = `
+SELECT DISTINCT
+  ST_SRID(start_point) AS start_srid,
+  ST_AsGeoJSON(start_point) AS start_point,
+  ST_SRID(end_point) AS end_srid,
+  ST_AsGeoJSON(end_point) AS end_point
+FROM
+  routing_canvas_range_grouping
+WHERE
+  start_point IS NOT NULL
+  AND
+  end_point IS NOT NULL
+  AND
+  start_point::text != end_point::text
+`.replace(/[\t\r\n ]+/g, ' ')
+  if (rangeIds.length) {
+    query += `AND range_id IN (${rangeIds.map((id, index) => `$${index + 1}`).join(', ')})`
+  }
+  const routePointsResult = await client.query(query, rangeIds)
+  const pendingRouteResults = routePointsResult.rows.map(async ({start_srid: startSrid, start_point: startPoint, end_srid: endSrid, end_point: endPoint}) => {
+      await client.query('SELECT plan_route(ST_SetSRID(ST_GeomFromGeoJSON($2), $1), ST_SetSRID(ST_GeomFromGeoJSON($4), $3))', [startSrid, startPoint, endSrid, endPoint])
+      return true
+  })
+  await Promise.all(pendingRouteResults)
+  return pendingRouteResults.length
+}
+
+function radiansToDegrees(radians) {
+  return radians * 180 / Math.PI
+}
+
 export async function getCanvasPoints(client, rangeId) {
+  await calculateRoutes(client, ...rangeId)
   const query = `
 SELECT
   canvas_overrides.notes,
   canvas_overrides.exclude,
   canvas_overrides.hole,
 	range_canvas.*,
-  routing_canvas_range_list.other_rank,
-  ST_AsGeoJSON(routing_canvas_range_list.point) AS point,
-  ST_AsGeoJSON(routing_canvas_range_list.start_point) AS start_point,
-  ST_AsGeoJSON(routing_canvas_range_list.end_point) AS end_point,
-	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'point', ST_AsGeoJSON(point))) FROM canvas_point_overrides WHERE external_id = range_canvas.external_id) AS overrides
+  ST_AsGeoJSON(routing_canvas_range_camera.point) AS point,
+  ST_AsGeoJSON(routing_canvas_range_camera.camera) AS camera,
+  (SELECT array_agg(ogc_fid) FROM lariac_buildings WHERE ST_Intersects(camera, wkb_geometry)) AS buildings,
+  routing_canvas_range_camera.bearing,
+	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'point', ST_AsGeoJSON(point))) FROM canvas_point_overrides WHERE iiif_id = range_canvas.iiif_id) AS overrides
 FROM
-	range_canvas JOIN routing_canvas_range_list ON
-    range_canvas.range_id = routing_canvas_range_list.range_id
+  range_canvas JOIN routing_canvas_range_camera ON
+    range_canvas.range_id = routing_canvas_range_camera.range_id
     AND
-		range_canvas.iiif_id = routing_canvas_range_list.iiif_id
+    range_canvas.iiif_id = routing_canvas_range_camera.iiif_id
   LEFT JOIN canvas_overrides ON
     range_canvas.iiif_id = canvas_overrides.iiif_id
 WHERE
 	range_canvas.range_id = $1
 ORDER BY
-	range_canvas.iiif_id
+	iiif_id
 `.replace(/[\t\r\n ]+/g, ' ')
   const manifestRangeMembersResult = await client.query(query, [rangeId])
-  const routeLookup = {}
-  const pendingPromises = []
-  manifestRangeMembersResult.rows.forEach(({start_point: startPoint, end_point: endPoint}) => {
-    if (!startPoint || !endPoint || endPoint === startPoint) {
-      return
-    }
-    const startPointNode = routeLookup[startPoint] || (routeLookup[startPoint] = {})
-    if (!startPointNode[endPoint]) {
-      async function getRoute() {
-        return dbPoolWorker(async client => {
-          const result = await client.query('SELECT ST_AsGeoJSON(plan_route(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326), ST_SetSRID(ST_GeomFromGeoJSON($2), 4326))) AS route', [startPoint, endPoint])
-          return result.rows[0]
-        })
-      }
-      const promise = startPointNode[endPoint] = getRoute().then(firstRow => {
-        const route = JSON.parse(firstRow.route)
-        startPointNode[endPoint] = {
-          route,
-          length: turfLength(route),
-        }
-      })
-      pendingPromises.push(promise)
-
-    }
-  })
-  await Promise.all(pendingPromises)
-  const validPoints = []
-  const bearingPoints = new Array(2)
-  let previousValidPointResult
-  const canvasPoints = manifestRangeMembersResult.rows.map(({iiif_id: id, point, start_point: startPoint, end_point: endPoint, overrides, other_rank: otherRank, ...row}, index) => {
+  const canvasPoints = manifestRangeMembersResult.rows.map(({iiif_id: id, point, camera, buildings, overrides, bearing, ...row}, index) => {
     if (overrides) {
       overrides.forEach(override => {
         override.point = JSON.parse(override.point || null)
       })
     }
 
-    if (point) {
-      point = JSON.parse(point)
-    } else if (!row.exclude && startPoint && endPoint) {
-      const routeData = routeLookup[startPoint][endPoint]
-      point = turfAlong(routeData.route, otherRank * routeData.length).geometry
-    }
-    const result = {id, point, overrides, ...row}
-    if (point) {
-      bearingPoints[1] = [point.coordinates[0], point.coordinates[1]]
-      if (validPoints.length) {
-        validPoints[validPoints.length - 1].bearing = turfBearing(bearingPoints[0], bearingPoints[1])
-      }
-      bearingPoints[0] = bearingPoints[1]
-      validPoints.push(result)
+    const result = {
+      id,
+      point: point ? JSON.parse(point) : undefined,
+      camera: camera ? JSON.parse(camera) : undefined,
+      buildings,
+      overrides,
+      bearing: radiansToDegrees(bearing),
+      ...row
     }
     return result
   })
-  if (validPoints.length > 1) {
-    validPoints[validPoints.length - 1].bearing = validPoints[validPoints.length - 2].bearing
-  }
   return canvasPoints
 /*
 

@@ -13,6 +13,7 @@ import * as iiifCollection from './src/iiif/collection'
 import * as iiifManifest from './src/iiif/manifest'
 import * as iiifRange from './src/iiif/range'
 import * as iiifCanvas from './src/iiif/canvas'
+import * as buildings from './src/buildings'
 
 const getOverrides = {
   'sc:Collection': iiifCollection.getOverrides,
@@ -121,6 +122,11 @@ app.post('/_db/load-all', jsonParser, (req, res) => {
 
 app.post('/_db/save-all', jsonParser, (req, res) => {
   dbResPoolWorker(res, client => saveAllOverrides(client))
+})
+
+app.get('/buildings', async (req, res) => {
+  const ids = Array.isArray(req.query.id) ? req.query.id : []
+  dbResPoolWorker(res, client => buildings.getBuildings(client, ...ids))
 })
 
 app.get('/collection', async (req, res) => {
