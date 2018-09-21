@@ -3,6 +3,7 @@ import turfBearing from '@turf/bearing'
 import turfLength from '@turf/length'
 
 import {getTags, updateTags} from './tags'
+import * as buildings from '../buildings'
 
 import {dbPoolWorker} from '../../server'
 
@@ -197,6 +198,12 @@ export async function getGeoJSON(client, rangeId) {
 
 
   const canvasPoints = await getCanvasPoints(client, rangeId)
+  const allBuildings = {}
+  canvasPoints.forEach(canvasPoint => (canvasPoint.buildings || []).forEach(buildingId => allBuildings[buildingId] = false))
+  const ignore = (await buildings.getBuildings(client, ...(Object.keys(allBuildings).map(id => parseInt(id))))).forEach(building => {
+    allBuildings[building.id] = building
+  })
+
   return {
     type: 'FeatureCollection',
     metadata: {
@@ -214,6 +221,24 @@ export async function getGeoJSON(client, rangeId) {
     features: canvasPoints.map(canvasPoint => {
       const {bearing, point} = canvasPoint
       const cameraDirection = (bearing + (fovOrientation === 'left' ? 0 : 180)) % 360
+      const pointBuildings = (canvasPoint.buildings || []).map(id => allBuildings[id]).filter(building => building)
+      const discoveredTaxData = {
+        yearbuilt: null,
+      }
+      const taxlots = pointBuildings.map(building => {
+        const {ain} = building
+        const taxdata = building.taxdata || {}
+        const {year_built} = taxdata
+        if (!discoveredTaxData.yearBuilt) {
+          discoveredTaxData.yearBuilt = year_built
+        } else if (year_built < discoveredTaxData.year_built) {
+          discoveredTaxData.yearBuilt = year_built
+        }
+        return {
+          ain: building.ain,
+          yearbuilt: year_built,
+        }
+      })
       const streetview = point ? `https://maps.google.com/maps/@?api=1&map_action=pano&viewpoint=${point.coordinates[1]},${point.coordinates[0]}&heading=${cameraDirection}` : null
         return {
           type: 'Feature',
@@ -228,7 +253,7 @@ export async function getGeoJSON(client, rangeId) {
             streetview,
             streetaddress: '?',
             structureextant: '?',
-            yearbuilt: '?',
+            yearbuilt: discoveredTaxData.yearBuilt,
             zoning: '?',
             ocr: [
               '?',
@@ -240,20 +265,7 @@ export async function getGeoJSON(client, rangeId) {
               hsv: '?',
               grey: '',
             },
-            taxlots: [
-              {
-                ain: 'XXXXX01',
-                yearbuilt: 1951,
-              },
-              {
-                ain: 'XXXXX02',
-                yearbuilt: 1951,
-              },
-              {
-                ain: 'XXXXX03',
-                yearbuilt: 1968,
-              }
-            ]
+            taxlots,
           },
         }
     }),
