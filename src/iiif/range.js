@@ -2,6 +2,7 @@ import turfAlong from '@turf/along'
 import turfBearing from '@turf/bearing'
 import turfLength from '@turf/length'
 
+import {processGoogleVision} from './canvas'
 import {getTags, updateTags} from './tags'
 import * as buildings from '../buildings'
 
@@ -128,7 +129,7 @@ ORDER BY
 	iiif_id
 `.replace(/[\t\r\n ]+/g, ' ')
   const manifestRangeMembersResult = await client.query(query, [rangeId])
-  const canvasPoints = manifestRangeMembersResult.rows.map(({iiif_id: id, point, camera, buildings, overrides, bearing, ...row}, index) => {
+  const canvasPoints = manifestRangeMembersResult.rows.map(({iiif_id: id, point, camera, buildings, overrides, bearing, google_vision, ...row}, index) => {
     if (overrides) {
       overrides.forEach(override => {
         override.point = JSON.parse(override.point || null)
@@ -142,6 +143,7 @@ ORDER BY
       buildings,
       overrides,
       bearing: radiansToDegrees(bearing),
+      googleVision: processGoogleVision(google_vision),
       ...row
     }
     return result
@@ -219,7 +221,7 @@ export async function getGeoJSON(client, rangeId) {
       camerainfo: '?'
     },
     features: canvasPoints.map(canvasPoint => {
-      const {bearing, point} = canvasPoint
+      const {id, bearing, point, googleVision = {}} = canvasPoint
       const cameraDirection = (bearing + (fovOrientation === 'left' ? 0 : 180)) % 360
       const pointBuildings = (canvasPoint.buildings || []).map(id => allBuildings[id]).filter(building => building)
       const discoveredTaxData = {
@@ -255,15 +257,11 @@ export async function getGeoJSON(client, rangeId) {
             structureextant: '?',
             yearbuilt: discoveredTaxData.yearBuilt,
             zoning: '?',
-            ocr: [
-              '?',
-            ],
-            tags: [
-              '?',
-            ],
+            ocr: googleVision.ocr,
+            tags: googleVision.labels,
             colormetadata: {
-              hsv: '?',
-              grey: '',
+              hsv: googleVision.hsv,
+              grey: googleVision.grey,
             },
             taxlots,
           },

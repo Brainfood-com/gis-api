@@ -1,4 +1,35 @@
+import colorConvert from 'color-convert'
 import {getTags, updateTags} from './tags'
+
+export function processGoogleVision(rawGoogleVision) {
+  if (!rawGoogleVision) {
+    return null
+  }
+  const {
+    crop: {
+      cropHints,
+    } = {},
+    image: {
+      dominantColors: {
+        colors,
+      } = {},
+    } = {},
+    label = [],
+    safeSearch = {},
+    text = [],
+    ...rest
+  } = rawGoogleVision
+
+  const labelList = label.map(labelEntry => labelEntry.description)
+  const textWordList = text.filter(textEntry => textEntry.description.indexOf('\n') === -1).map(textEntry => textEntry.description)
+  const {color: {red, green, blue, alpha}} = [].concat(colors).sort((a, b) => a.pixelFraction - b.pixelFraction)[0]
+  return {
+    labels: labelList,
+    ocr: textWordList,
+    hsv: colorConvert.rgb.hsv([red, green, blue]),
+    grey: colorConvert.rgb.gray([red, green, blue]),
+  }
+}
 
 export async function getOne(client, canvasId) {
   const canvasResult = await client.query("SELECT * FROM canvas WHERE iiif_id = $1", [canvasId])
@@ -20,6 +51,8 @@ export async function getOne(client, canvasId) {
     exclude: firstOverrideRow.exclude,
     hole: firstOverrideRow.hole,
     tags,
+
+    googleVision: processGoogleVision(firstRow.googleVision),
   }
 }
 
