@@ -1,4 +1,4 @@
-import colorConvert from 'color-convert'
+import Color from 'color'
 import {getTags, updateTags} from './tags'
 
 export function processGoogleVision(rawGoogleVision) {
@@ -22,12 +22,26 @@ export function processGoogleVision(rawGoogleVision) {
 
   const labelList = label.map(labelEntry => labelEntry.description)
   const textWordList = text.filter(textEntry => textEntry.description.indexOf('\n') === -1).map(textEntry => textEntry.description)
-  const {color: {red, green, blue, alpha}} = [].concat(colors).sort((a, b) => a.pixelFraction - b.pixelFraction)[0]
+  const {color: imageColor} = colors.map(({color: {red, green, blue}, score, pixelFraction}) => {
+    return {
+      color: Color.rgb(red, green, blue),
+      score,
+      pixelFraction
+    }
+  }).reduce((result, nextEntry) => {
+    const nextScore = result.score + nextEntry.score
+    return {
+      color: result.color.lighten(result.score / nextScore).mix(nextEntry.color.lighten(nextEntry.score / nextScore)),
+      score: nextScore,
+      pixelFraction: result.pixelFraction + nextEntry.pixelFraction,
+    }
+  })
   return {
     labels: labelList,
     ocr: textWordList,
-    hsv: colorConvert.rgb.hsv([red, green, blue]),
-    grey: colorConvert.rgb.gray([red, green, blue]),
+    rgb: imageColor.array(),
+    hsv: imageColor.hsl().array(),
+    grey: imageColor.grayscale().array(),
   }
 }
 
