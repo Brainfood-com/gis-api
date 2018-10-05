@@ -114,6 +114,9 @@ SELECT
   ST_AsGeoJSON(routing_canvas_range_camera.point) AS point,
   ST_AsGeoJSON(routing_canvas_range_camera.camera) AS camera,
   (SELECT array_agg(ogc_fid) FROM lariac_buildings WHERE ST_Intersects(camera, wkb_geometry)) AS buildings,
+  routing_canvas_range_camera.addr_number,
+  routing_canvas_range_camera.addr_fullname,
+  routing_canvas_range_camera.addr_zipcode,
   routing_canvas_range_camera.bearing,
 	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'point', ST_AsGeoJSON(point))) FROM canvas_point_overrides WHERE iiif_id = range_canvas.iiif_id) AS overrides
 FROM
@@ -241,6 +244,7 @@ export async function getGeoJSON(client, rangeId) {
           yearbuilt: year_built,
         }
       })
+      const addr_parts = [canvasPoint.addr_number, canvasPoint.addr_fullname, canvasPoint.addr_zipcode]
       const streetview = point ? `https://maps.google.com/maps/@?api=1&map_action=pano&viewpoint=${point.coordinates[1]},${point.coordinates[0]}&heading=${cameraDirection}` : null
         return {
           type: 'Feature',
@@ -253,7 +257,7 @@ export async function getGeoJSON(client, rangeId) {
             time: '?',
             distance: '?',
             streetview,
-            streetaddress: '?',
+            streetaddress: addr_parts.filter(item => item).join(' '),
             structureextant: '?',
             yearbuilt: discoveredTaxData.yearBuilt,
             zoning: '?',
