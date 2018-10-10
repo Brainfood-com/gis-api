@@ -125,29 +125,40 @@ export async function setOverrides(client, canvasId, {notes, exclude, hole, tags
 }
 
 export const point = {}
-point.nearestEdge = async function nearestEdge(client, point) {
+point.nearestEdge = async function nearestEdge(client, inputPoint) {
   const query = `
 WITH parsed AS (
   SELECT ST_SetSRID(ST_GeomFromGeoJSON($1), 4326) AS point
 ),
-nearest_edge AS (
+nearest AS (
   SELECT
-    gisapp_nearest_edge(parsed.point) AS edge
+    *
   FROM
-    parsed
+    parsed, gisapp_point_addr(parsed.point)
 )
 SELECT
+  nearest.number,
+  tl_2017_06037_edges.fullname,
+  COALESCE(tl_2017_06037_edges.zipl, tl_2017_06037_edges.zipr) AS zipcode,
+  ST_AsGeoJSON(ST_ClosestPoint(tl_2017_06037_edges.wkb_geometry, parsed.point)) AS point,
   ST_AsGeoJSON(tl_2017_06037_edges.wkb_geometry) AS edge
 FROM
-  tl_2017_06037_edges JOIN nearest_edge ON tl_2017_06037_edges.ogc_fid = nearest_edge.edge,
+  tl_2017_06037_edges JOIN nearest ON
+    tl_2017_06037_edges.ogc_fid = nearest.ogc_fid,
   parsed
 `
-  const result = await client.query(query, [point])
+  const result = await client.query(query, [inputPoint])
   if (!result.rowCount) {
     return null
   }
-  const {edge} = result.rows[0]
-  return {edge: JSON.parse(edge)}
+  const {number, fullname, zipcode, point, edge} = result.rows[0]
+  return {
+    number,
+    fullname,
+    zipcode,
+    point: JSON.parse(point),
+    edge: JSON.parse(edge),
+  }
 }
 
 point.updateOne = async function updateOne(client, canvasId, sourceId, {priority, point}) {
