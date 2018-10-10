@@ -231,4 +231,11 @@ app.delete('/canvas/:canvasId/point/:sourceId', jsonParser, (req, res) => {
   })
 })
 
+app.post('/edge/by-point', jsonParser, (req, res) => {
+  const {body: {point}} = req
+  dbResPoolWorker(res, client => {
+    return iiifCanvas.point.nearestEdge(client, point)
+  })
+})
+
 app.listen(8080)

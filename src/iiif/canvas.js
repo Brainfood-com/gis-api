@@ -125,6 +125,31 @@ export async function setOverrides(client, canvasId, {notes, exclude, hole, tags
 }
 
 export const point = {}
+point.nearestEdge = async function nearestEdge(client, point) {
+  const query = `
+WITH parsed AS (
+  SELECT ST_SetSRID(ST_GeomFromGeoJSON($1), 4326) AS point
+),
+nearest_edge AS (
+  SELECT
+    gisapp_nearest_edge(parsed.point) AS edge
+  FROM
+    parsed
+)
+SELECT
+  ST_AsGeoJSON(tl_2017_06037_edges.wkb_geometry) AS edge
+FROM
+  tl_2017_06037_edges JOIN nearest_edge ON tl_2017_06037_edges.ogc_fid = nearest_edge.edge,
+  parsed
+`
+  const result = await client.query(query, [point])
+  if (!result.rowCount) {
+    return null
+  }
+  const {edge} = result.rows[0]
+  return {edge: JSON.parse(edge)}
+}
+
 point.updateOne = async function updateOne(client, canvasId, sourceId, {priority, point}) {
   const pointAdjustQuery = `
 WITH parsed AS (
