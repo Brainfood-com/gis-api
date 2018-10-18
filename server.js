@@ -179,9 +179,9 @@ app.get('/range/:rangeId', (req, res) => {
 
 app.post('/range/:rangeId', jsonParser, (req, res) => {
   const {rangeId} = req.params
-  const {body: {notes, fovAngle, fovDepth, fovOrientation, tags}} = req
+  const {body: {notes, reverse, fovAngle, fovDepth, fovOrientation, tags}} = req
   dbResPoolWorker(res, client => {
-    return iiifRange.updateOne(client, rangeId, {notes, fovAngle, fovDepth, fovOrientation, tags}).then(result => {
+    return iiifRange.updateOne(client, rangeId, {notes, reverse, fovAngle, fovDepth, fovOrientation, tags}).then(result => {
       saveOverridesToDisk(client, rangeId)
     })
   })

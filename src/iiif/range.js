@@ -20,6 +20,7 @@ export async function getOne(client, rangeId) {
     type: firstRow.iiif_type_id,
     viewingHint: firstRow.viewingHint,
     notes: firstOverrideRow.notes,
+    reverse: firstOverrideRow.reverse,
     fovAngle: firstOverrideRow.fov_angle,
     fovDepth: firstOverrideRow.fov_depth,
     fovOrientation: firstOverrideRow.fov_orientation || 'left',
@@ -27,7 +28,7 @@ export async function getOne(client, rangeId) {
   }
 }
 
-export async function updateOne(client, rangeId, {notes, fovAngle, fovDepth, fovOrientation, tags}) {
+export async function updateOne(client, rangeId, {notes, reverse, fovAngle, fovDepth, fovOrientation, tags}) {
   const query = `
 WITH range_external_id AS (
   SELECT
@@ -47,24 +48,25 @@ WITH range_external_id AS (
   RETURNING iiif_override_id
 )
 INSERT INTO iiif_range_overrides
-  (iiif_override_id, fov_angle, fov_depth, fov_orientation)
+  (iiif_override_id, reverse, fov_angle, fov_depth, fov_orientation)
   SELECT
-    override_id.iiif_override_id, $3, $4, $5
+    override_id.iiif_override_id, $3, $4, $5, $6
   FROM override_id
 
-  ON CONFLICT (iiif_override_id) DO UPDATE SET (fov_angle, fov_depth, fov_orientation) = ROW($3, $4, $5)
+  ON CONFLICT (iiif_override_id) DO UPDATE SET (reverse, fov_angle, fov_depth, fov_orientation) = ROW($3, $4, $5, $6)
 `
-  const insertUpdateResult = await client.query(query, [rangeId, notes, fovAngle, fovDepth, fovOrientation])
+  const insertUpdateResult = await client.query(query, [rangeId, notes, reverse, fovAngle, fovDepth, fovOrientation])
   await updateTags(client, rangeId, tags)
   return {ok: true}
 }
 export const setOverrides = updateOne
 
 export async function getOverrides(client, iiifOverrideId) {
-  const rangeInfo = await client.query('SELECT fov_angle, fov_depth, fov_orientation FROM iiif_range_overrides WHERE iiif_override_id = $1', [iiifOverrideId])
-  const {fov_angle, fov_depth, fov_orientation} = rangeInfo.rows[0] || {}
+  const rangeInfo = await client.query('SELECT reverse, fov_angle, fov_depth, fov_orientation FROM iiif_range_overrides WHERE iiif_override_id = $1', [iiifOverrideId])
+  const {reverse, fov_angle, fov_depth, fov_orientation} = rangeInfo.rows[0] || {}
   console.log('range:getOverrides')
   return {
+    reverse,
     fov_angle,
     fov_depth,
     fov_orientation,
