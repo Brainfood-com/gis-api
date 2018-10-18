@@ -110,7 +110,7 @@ async function loadAllOverrides(client) {
 
 async function saveAllOverrides(client) {
   const allOverridesResult = await client.query('SELECT a.iiif_id FROM iiif a JOIN iiif_overrides b ON a.external_id = b.external_id')
-  await allOverridesResult.rows.map(row => saveOverridesToDisk(client, row.iiif_id))
+  await Promise.all(allOverridesResult.rows.map(row => saveOverridesToDisk(client, row.iiif_id)))
 }
 
 const app = express()
