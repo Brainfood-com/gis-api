@@ -106,7 +106,7 @@ function radiansToDegrees(radians) {
 }
 
 export async function getCanvasPoints(client, rangeId) {
-  await calculateRoutes(client, ...rangeId)
+  await calculateRoutes(client, rangeId)
   const query = `
 SELECT
   canvas_overrides.notes,
