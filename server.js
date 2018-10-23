@@ -149,10 +149,9 @@ app.get('/collection/:collectionId', (req, res) => {
 app.post('/collection/:collectionId', jsonParser, (req, res) => {
   const {collectionId} = req.params
   const {body: {notes, tags}} = req
-  dbResPoolWorker(res, client => {
-    return iiifCollection.updateOne(client, collectionId, {notes, tags}).then(result => {
-      saveOverridesToDisk(client, collectionId)
-    })
+  dbResPoolWorker(res, async client => {
+    await iiifCollection.updateOne(client, collectionId, {notes, tags})
+    await saveOverridesToDisk(client, collectionId)
   })
 })
 
@@ -168,10 +167,9 @@ app.get('/manifest/:manifestId', (req, res) => {
 app.post('/manifest/:manifestId', jsonParser, (req, res) => {
   const {manifestId} = req.params
   const {body: {notes, tags}} = req
-  dbResPoolWorker(res, client => {
-    return iiifManifest.updateOne(client, manifestId, {notes, tags}).then(result => {
-      saveOverridesToDisk(client, manifestId)
-    })
+  dbResPoolWorker(res, async client => {
+    await iiifManifest.updateOne(client, manifestId, {notes, tags})
+    await saveOverridesToDisk(client, manifestId)
   })
 })
 
@@ -188,10 +186,9 @@ app.get('/range/:rangeId', (req, res) => {
 app.post('/range/:rangeId', jsonParser, (req, res) => {
   const {rangeId} = req.params
   const {body: {notes, reverse, fovAngle, fovDepth, fovOrientation, tags}} = req
-  dbResPoolWorker(res, client => {
-    return iiifRange.updateOne(client, rangeId, {notes, reverse, fovAngle, fovDepth, fovOrientation, tags}).then(result => {
-      saveOverridesToDisk(client, rangeId)
-    })
+  dbResPoolWorker(res, async client => {
+    await iiifRange.updateOne(client, rangeId, {notes, reverse, fovAngle, fovDepth, fovOrientation, tags})
+    await saveOverridesToDisk(client, rangeId)
   })
 })
 
@@ -213,29 +210,26 @@ app.get('/canvas/:canvasId', (req, res) => {
 app.post('/canvas/:canvasId', jsonParser, (req, res) => {
   const {canvasId} = req.params
   const {body: {notes, tags = [], exclude = false, hole = false}} = req
-  dbResPoolWorker(res, client => {
-    return iiifCanvas.updateOne(client, canvasId, {notes, exclude, hole, tags}).then(result => {
-      saveOverridesToDisk(client, canvasId)
-    })
+  dbResPoolWorker(res, async client => {
+    await iiifCanvas.updateOne(client, canvasId, {notes, exclude, hole, tags})
+    await saveOverridesToDisk(client, canvasId)
   })
 })
 
 app.post('/canvas/:canvasId/point/:sourceId', jsonParser, (req, res) => {
   const {canvasId, sourceId} = req.params
   const {body: {priority, point}} = req
-  dbResPoolWorker(res, client => {
-    return iiifCanvas.point.updateOne(client, canvasId, sourceId, {priority, point}).then(result => {
-      saveOverridesToDisk(client, canvasId)
-    })
+  dbResPoolWorker(res, async client => {
+    await iiifCanvas.point.updateOne(client, canvasId, sourceId, {priority, point})
+    await saveOverridesToDisk(client, canvasId)
   })
 })
 
 app.delete('/canvas/:canvasId/point/:sourceId', jsonParser, (req, res) => {
   const {canvasId, sourceId} = req.params
-  dbResPoolWorker(res, client => {
-    return iiifCanvas.point.deleteOne(client, canvasId, sourceId).then(result => {
-      saveOverridesToDisk(client, canvasId)
-    })
+  dbResPoolWorker(res, async client => {
+    await iiifCanvas.point.deleteOne(client, canvasId, sourceId)
+    await saveOverridesToDisk(client, canvasId)
   })
 })
 
