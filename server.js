@@ -7,6 +7,8 @@ import express from 'express'
 import cors from 'cors'
 import bodyParser from 'body-parser'
 import { Client, Pool } from 'pg'
+import promiseLimit from 'promise-limit'
+import getenv from 'getenv'
 
 import {getTags, updateTags} from './src/iiif/tags'
 import * as iiifCollection from './src/iiif/collection'
@@ -42,15 +44,21 @@ const pool = new Pool({
   connectionTimeoutMillis: 2000,
 })
 
+const dbConnectionLimit = promiseLimit(getenv.int('DB_CONNECTION_LIMIT', 10))
+
 //    this._pgConnection = new Client({
 
-export async function dbPoolWorker(handler) {
+async function dbPoolConnection(handler) {
   const client = await pool.connect()
   try {
     return await handler(client)
   } finally {
     client.release()
   }
+}
+
+export async function dbPoolWorker(handler) {
+  return dbConnectionLimit(() => dbPoolConnection(handler))
 }
 
 export async function dbResPoolWorker(res, handler) {

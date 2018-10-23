@@ -1,12 +1,16 @@
 import turfAlong from '@turf/along'
 import turfBearing from '@turf/bearing'
 import turfLength from '@turf/length'
+import promiseLimit from 'promise-limit'
+import getenv from 'getenv'
 
 import {processGoogleVision} from './canvas'
 import {getTags, updateTags} from './tags'
 import * as buildings from '../buildings'
 
 import {dbPoolWorker} from '../../server'
+
+const parallelRouteLimit = promiseLimit(getenv.int('CALCULATE_ROUTE_CONCURRENCY', 1))
 
 export async function getOne(client, rangeId) {
   const rangeResult = await client.query("SELECT * FROM range WHERE iiif_id = $1", [rangeId])
@@ -93,11 +97,12 @@ WHERE
     query += `AND range_id IN (${rangeIds.map((id, index) => `$${index + 1}`).join(', ')})`
   }
   const routePointsResult = await client.query(query, rangeIds)
-  const pendingRouteResults = routePointsResult.rows.map(async ({start_srid: startSrid, start_point: startPoint, end_srid: endSrid, end_point: endPoint}) => {
+  const pendingRouteResults = await parallelRouteLimit.map(routePointsResult.rows, async ({start_srid: startSrid, start_point: startPoint, end_srid: endSrid, end_point: endPoint}) => {
+    return await dbPoolWorker(async client => {
       await client.query('SELECT plan_route(ST_SetSRID(ST_GeomFromGeoJSON($2), $1), ST_SetSRID(ST_GeomFromGeoJSON($4), $3))', [startSrid, startPoint, endSrid, endPoint])
       return true
+    })
   })
-  await Promise.all(pendingRouteResults)
   return pendingRouteResults.length
 }
 
