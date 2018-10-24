@@ -36,7 +36,8 @@ WITH iiif_object AS (
   ON CONFLICT (external_id) DO UPDATE SET external_id = EXCLUDED.external_id
   RETURNING iiif_override_id
 ), delete_ignore AS (
-  DELETE FROM iiif_overrides_tags USING tag_id, override_id WHERE iiif_overrides_tags.iiif_override_id = override_id.iiif_override_id AND iiif_overrides_tags.iiif_tag_id NOT IN (tag_id.iiif_tag_id)
+  DELETE FROM iiif_overrides_tags a USING override_id b WHERE a.iiif_override_id = b.iiif_override_id AND a.iiif_tag_id NOT IN (SELECT tag_id.iiif_tag_id FROM tag_id)
+  RETURNING a.iiif_override_id
 )
 INSERT INTO iiif_overrides_tags (iiif_override_id, iiif_tag_id, sequence_num)
 SELECT
@@ -44,7 +45,8 @@ SELECT
 FROM
   tag_list a JOIN tag_id b ON
     a.tag = b.tag
-  CROSS JOIN override_id c
+  CROSS JOIN override_id c LEFT JOIN delete_ignore d ON
+    c.iiif_override_id = d.iiif_override_id
 ON CONFLICT (iiif_override_id, iiif_tag_id) DO UPDATE SET sequence_num = EXCLUDED.sequence_num
 `
   return await client.query(query, [iiifId, tags])
