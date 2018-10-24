@@ -84,12 +84,15 @@ async function saveOverridesToDisk(client, iiifId) {
     tags: await getTags(client, iiifId),
     _overrides: await getOverrides[iiif_type_id](client, iiif_override_id)
   }
-  console.log('saveData', JSON.stringify(dataToSave, null, 1))
+  const saveData = JSON.stringify(dataToSave, (key, value) => {
+    return key && value === null ? undefined : value
+  }, 1)
+  console.log('saveData', saveData)
   const targetName = '/srv/app/exports/' + escape(external_id) + '.iiif'
   const targetBaseName = path.basename(targetName)
   const targetDirName = path.dirname(targetName)
   await fse.mkdirs(targetDirName)
-  await fse.writeFile(`${targetDirName}/${targetBaseName}.tmp`, JSON.stringify(dataToSave, null, 1))
+  await fse.writeFile(`${targetDirName}/${targetBaseName}.tmp`, saveData)
   await fse.rename(`${targetDirName}/${targetBaseName}.tmp`, targetName)
 }
 
