@@ -68,7 +68,6 @@ export const setOverrides = updateOne
 export async function getOverrides(client, iiifOverrideId) {
   const rangeInfo = await client.query('SELECT reverse, fov_angle, fov_depth, fov_orientation FROM iiif_range_overrides WHERE iiif_override_id = $1', [iiifOverrideId])
   const {reverse, fov_angle, fov_depth, fov_orientation} = rangeInfo.rows[0] || {}
-  console.log('range:getOverrides')
   return {
     reverse,
     fov_angle,

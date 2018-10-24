@@ -70,6 +70,27 @@ export async function dbResPoolWorker(res, handler) {
   }
 }
 
+function isNumeric(n) {
+  return !isNaN(parseFloat(n)) && isFinite(n)
+}
+
+function isNotNeeded(value) {
+  if (value === null || value === undefined || value === false) {
+    return true
+  }
+  const valueType = typeof value
+  if (valueType === 'string' || valueType === 'boolean' || isNumeric(value)) {
+    return false
+  }
+  if (Array.isArray(value) && value.length === 0) {
+    return true
+  }
+  if (Object.entries(value).filter(entry => !isNotNeeded(entry[1])).length === 0) {
+    return true
+  }
+  return false
+}
+
 async function saveOverridesToDisk(client, iiifId) {
   const iiifInfo = await client.query('SELECT b.iiif_override_id, a.external_id, a.iiif_type_id, b.notes FROM iiif a JOIN iiif_overrides b ON a.external_id = b.external_id WHERE a.iiif_id = $1', [iiifId])
   if (iiifInfo.rows.length === 0) {
@@ -85,9 +106,8 @@ async function saveOverridesToDisk(client, iiifId) {
     _overrides: await getOverrides[iiif_type_id](client, iiif_override_id)
   }
   const saveData = JSON.stringify(dataToSave, (key, value) => {
-    return key && value === null ? undefined : value
+    return key === '' || !isNotNeeded(value) ? value : undefined
   }, 1)
-  console.log('saveData', saveData)
   const targetName = '/srv/app/exports/' + escape(external_id) + '.iiif'
   const targetBaseName = path.basename(targetName)
   const targetDirName = path.dirname(targetName)
