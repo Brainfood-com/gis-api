@@ -17,17 +17,23 @@ import * as iiifRange from './src/iiif/range'
 import * as iiifCanvas from './src/iiif/canvas'
 import * as buildings from './src/buildings'
 
-const getOverrides = {
-  'sc:Collection': iiifCollection.getOverrides,
-  'sc:Manifest': iiifManifest.getOverrides,
-  'sc:Range': iiifRange.getOverrides,
-  'sc:Canvas': iiifCanvas.getOverrides,
-}
-const saveOverrides = {
-  'sc:Collection': iiifCollection.setOverrides,
-  'sc:Manifest': iiifManifest.setOverrides,
-  'sc:Range': iiifRange.setOverrides,
-  'sc:Canvas': iiifCanvas.setOverrides,
+const iiifTypeDescriptors = {
+  'sc:Collection': {
+    getOverrides: iiifCollection.getOverrides,
+    saveOverrides: iiifCollection.setOverrides,
+  },
+  'sc:Manifest': {
+    getOverrides: iiifManifest.getOverrides,
+    saveOverrides: iiifManifest.setOverrides,
+  },
+  'sc:Range': {
+    getOverrides: iiifRange.getOverrides,
+    saveOverrides: iiifRange.setOverrides,
+  },
+  'sc:Canvas': {
+    getOverrides: iiifCanvas.getOverrides,
+    saveOverrides: iiifCanvas.setOverrides,
+  },
 }
 
 const jsonParser = bodyParser.json()
@@ -103,7 +109,7 @@ async function saveOverridesToDisk(client, iiifId) {
     iiif_type_id,
     notes,
     tags: await getTags(client, iiifId),
-    _overrides: await getOverrides[iiif_type_id](client, iiif_override_id)
+    _overrides: await iiifTypeDescriptors[iiif_type_id].getOverrides(client, iiif_override_id)
   }
   const saveData = JSON.stringify(dataToSave, (key, value) => {
     return key === '' || !isNotNeeded(value) ? value : undefined
@@ -128,7 +134,7 @@ async function loadOverrideFromDisk(client, file) {
   const {iiif_id} = firstRow
   const dataToSave = {notes, tags, ..._overrides}
   console.log('saving', external_id, iiif_id, dataToSave)
-  return saveOverrides[iiif_type_id](client, iiif_id, dataToSave)
+  return iiifTypeDescriptors[iiif_type_id].saveOverrides(client, iiif_id, dataToSave)
 }
 
 async function loadAllOverrides(client) {
