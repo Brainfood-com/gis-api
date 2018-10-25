@@ -121,7 +121,7 @@ export async function getOverrides(client, iiifOverrideId) {
 
 export async function setOverrides(client, canvasId, {notes, exclude, hole, tags, points}) {
   await exports.updateOne(client, canvasId, {notes, exclude, hole, tags})
-  await Promise.all(points.map(({source, priority, point}) => exports.point.updateOne(client, canvasId, source, {priority, point})))
+  await exports.point.setAll(client, canvasId, points)
 }
 
 export const point = {}
@@ -208,6 +208,66 @@ INSERT INTO iiif_canvas_point_overrides
   DO UPDATE SET (priority, point) = ROW($3, CASE WHEN $4 IS NOT NULL THEN ST_SetSRID(ST_GeomFromGeoJSON($4), 4326) ELSE NULL END)
 `
   const insertUpdateResult = await client.query(query, [canvasId, sourceId, priority, adjustedPoint])
+  return {ok: true}
+}
+
+point.setAll = async function setAll(client, canvasId, points) {
+  const query = `
+WITH
+parsed AS (
+  SELECT
+    value::json->>'source' AS source_id,
+    (value::json->>'priority')::integer AS priority,
+    ST_SetSRID(ST_GeomFromGeoJSON(json_out(value::json->'point')::text), 4326) AS point
+  FROM
+    json_array_elements($2::json)
+),
+nearest_edge AS (
+  SELECT
+    parsed.*,
+    gisapp_nearest_edge(parsed.point) AS edge
+  FROM
+    parsed
+),
+adjusted_point AS (
+  SELECT
+    nearest_edge.*,
+    COALESCE(ST_ClosestPoint(tl_2017_06037_edges.wkb_geometry, nearest_edge.point), nearest_edge.point) AS adjusted_point
+  FROM
+    tl_2017_06037_edges JOIN nearest_edge ON tl_2017_06037_edges.ogc_fid = nearest_edge.edge
+),
+canvas_external_id AS (
+  SELECT
+    external_id
+  FROM
+    canvas
+  WHERE
+    iiif_id = $1
+),
+override_id AS (
+  INSERT INTO iiif_overrides
+    (external_id)
+    SELECT
+      canvas_external_id.external_id
+    FROM canvas_external_id
+
+    ON CONFLICT (external_id) DO UPDATE SET external_id = EXCLUDED.external_id
+    RETURNING iiif_override_id
+),
+delete_ignore AS (
+  DELETE FROM iiif_canvas_point_overrides a USING override_id b WHERE a.iiif_override_id = b.iiif_override_id AND a.iiif_canvas_override_source_id NOT IN (SELECT source_id FROM parsed)
+  RETURNING a.iiif_override_id
+)
+INSERT INTO iiif_canvas_point_overrides (iiif_override_id, iiif_canvas_override_source_id, priority, point)
+SELECT
+  b.iiif_override_id, a.source_id, a.priority, a.point
+FROM
+  adjusted_point a CROSS JOIN override_id b
+  LEFT JOIN delete_ignore c ON
+    b.iiif_override_id = c.iiif_override_id
+ON CONFLICT (iiif_override_id, iiif_canvas_override_source_id) DO UPDATE SET priority = EXCLUDED.priority, point = EXCLUDED.point
+`
+  await client.query(query, [canvasId, JSON.stringify(points)])
   return {ok: true}
 }
 
