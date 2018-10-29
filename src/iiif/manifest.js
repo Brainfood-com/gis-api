@@ -49,7 +49,7 @@ export async function getOverrides(client, iiifOverrideId) {
 }
 
 export async function getStructures(client, manifestId) {
-  const manifestRangesResult = await client.query("SELECT a.iiif_id_to AS range_id, b.label, c.viewing_hint FROM iiif_assoc a JOIN iiif b ON a.iiif_id_to = b.iiif_id AND a.iiif_assoc_type_id = 'sc:Range' JOIN iiif_range c ON b.iiif_id = c.iiif_id WHERE a.iiif_id_from = $1 ORDER BY a.sequence_num, b.label", [manifestId])
+  const manifestRangesResult = await client.query("SELECT a.iiif_id_to AS range_id, b.iiif_type_id, b.label, c.viewing_hint FROM iiif_assoc a JOIN iiif b ON a.iiif_id_to = b.iiif_id AND a.iiif_assoc_type_id = 'sc:Range' JOIN iiif_range c ON b.iiif_id = c.iiif_id WHERE a.iiif_id_from = $1 ORDER BY a.sequence_num, b.label", [manifestId])
   const manifestRangeMembersResult = await client.query(`
 WITH has_point_override AS (
   SELECT
@@ -81,17 +81,17 @@ ORDER BY
 `, [manifestId])
   const rangesToMembers = {}
   manifestRangeMembersResult.rows.forEach(memberRow => {
-    const {range_id: rangeId, iiif_assoc_type_id: typeId, member_id: memberId, has_override_point: hasOverridePoint} = memberRow
+    const {range_id: rangeId, iiif_assoc_type_id: typeId, member_id: memberId, member_type_id: memberTypeId, has_override_point: hasOverridePoint} = memberRow
     const rangeMembers = rangesToMembers[rangeId] || (rangesToMembers[rangeId] = {ranges: [], canvases: [], pointOverrideCount: 0})
     if (hasOverridePoint) {
       ++rangeMembers.pointOverrideCount
     }
     switch (typeId) {
       case 'sc:Range':
-        rangeMembers.ranges.push(memberId)
+        rangeMembers.ranges.push({id: memberId, type: memberTypeId})
         break
       case 'sc:Canvas':
-        rangeMembers.canvases.push(memberId)
+        rangeMembers.canvases.push({id: memberId, type: memberTypeId})
         break
     }
   })
