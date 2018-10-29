@@ -2,23 +2,17 @@ import Color from 'color'
 import {getTags, updateTags} from './tags'
 
 export function processGoogleVision(rawGoogleVision) {
-  if (!rawGoogleVision) {
-    return null
-  }
   const {
-    crop: {
-      cropHints,
-    } = {},
-    image: {
-      dominantColors: {
-        colors,
-      } = {},
-    } = {},
-    label = [],
-    safeSearch = {},
-    text = [],
+    gvCrop,
+    gvImage,
+    label,
+    safeSearch,
+    text,
     ...rest
-  } = rawGoogleVision
+  } = rawGoogleVision || {label: [], text: []}
+  const {cropHints} = gvCrop || {}
+  const {gvDominantColors} = gvImage || {}
+  const {colors = [Color.rgb(0, 0, 0)]} = gvDominantColors || {}
 
   const labelList = label.map(labelEntry => labelEntry.description)
   const textWordList = text.filter(textEntry => textEntry.description.indexOf('\n') === -1).map(textEntry => textEntry.description)
