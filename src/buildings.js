@@ -24,7 +24,7 @@ FROM
 WHERE
 `.replace(/[\t\r\n ]+/g, ' ')
   if (!ogcFids.length) {
-    return null
+    return []
   }
   query += ` a.ogc_fid IN (${ogcFids.map((id, index) => `$${index + 1}`).join(', ')})`
   const result = await client.query(query, ogcFids)
