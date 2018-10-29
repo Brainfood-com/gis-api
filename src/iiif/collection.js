@@ -19,9 +19,11 @@ export async function getOne(client, collectionId) {
   return {
     id: firstRow.iiif_id,
     label: firstRow.label,
-    manifests: assocResult.rows.map(row => {
-      return {id: row.iiif_id_to, type: row.iiif_assoc_type_id, label: row.label, type: row.iiif_type_id}
-    }),
+    manifests: await Promise.all(assocResult.rows.map(async row => {
+      const manifestId = row.iiif_id_to
+      const manifestTags = await getTags(client, manifestId)
+      return {id: manifestId, type: row.iiif_assoc_type_id, label: row.label, type: row.iiif_type_id, tags}
+    })),
     type,
     notes: firstOverrideRow.notes,
     tags,
