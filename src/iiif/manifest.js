@@ -95,10 +95,11 @@ ORDER BY
         break
     }
   })
-  const structures = manifestRangesResult.rows.map(rangeRow => {
+  const structures = await Promise.all(manifestRangesResult.rows.map(async rangeRow => {
     const {range_id: rangeId, label, iiif_type_id: type, viewing_hint: viewingHint} = rangeRow
     const members = rangesToMembers[rangeId] || {}
-    return {...members, id: rangeId, label, type, viewingHint}
-  })
+    const tags = await getTags(client, rangeId)
+    return {...members, id: rangeId, label, type, viewingHint, tags}
+  }))
   return structures
 }
