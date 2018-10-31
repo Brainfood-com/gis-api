@@ -203,6 +203,11 @@ ORDER BY
   */
 }
 
+const addressFields = ['house_no', 'house_fraction', 'street_direction', 'street_name', 'unit_no', 'city', 'zip_code5']
+const addressFieldSeparators = {
+    unit_no: ',',
+}
+
 export async function getGeoJSON(client, rangeId) {
   const range = await exports.getOne(client, rangeId)
   const {fovOrientation} = range
@@ -239,6 +244,16 @@ export async function getGeoJSON(client, rangeId) {
       const taxlots = pointBuildings.map(building => {
         const {ain} = building
         const taxdata = building.taxdata || {}
+        const address = addressFields.map((fieldName, index) => {
+          const {[fieldName]: fieldValue = ''} = taxdata
+          return [index === 0 ? '' : addressFieldSeparators[fieldName] || ' ', typeof fieldValue === 'string' ? fieldValue.trim() : fieldValue]
+        }).filter(fieldValue =>
+          fieldValue[1]
+        ).map(fieldValue =>
+          fieldValue.join('')
+        ).join('')
+        // house_no house_fraction street_direction street_name, unit_no
+        // city zip_code5
         const {year_built} = taxdata
         if (!discoveredTaxData.yearBuilt) {
           discoveredTaxData.yearBuilt = year_built
@@ -248,6 +263,7 @@ export async function getGeoJSON(client, rangeId) {
         return {
           ain: building.ain,
           yearbuilt: year_built,
+          address,
         }
       })
       const addr_parts = [canvasPoint.addr_number, canvasPoint.addr_fullname, canvasPoint.addr_zipcode]
