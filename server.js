@@ -15,6 +15,7 @@ import * as iiifCollection from './src/iiif/collection'
 import * as iiifManifest from './src/iiif/manifest'
 import * as iiifRange from './src/iiif/range'
 import * as iiifCanvas from './src/iiif/canvas'
+import * as iiifTags from './src/iiif/tags'
 import * as buildings from './src/buildings'
 
 const iiifTypeDescriptors = {
@@ -266,6 +267,19 @@ app.post('/edge/by-point', jsonParser, (req, res) => {
   const {body: {point}} = req
   dbResPoolWorker(res, client => {
     return iiifCanvas.point.nearestEdge(client, point)
+  })
+})
+
+app.post('/stats/range', jsonParser, (req, res) => {
+  dbResPoolWorker(res, async client => {
+    const claimedRanges = await iiifTags.searchTags(client, {types: ['sc:Range'], tags: ['Claimed']})
+    const placedRanges = await iiifTags.searchTags(client, {types: ['sc:Range'], tags: ['Placed']})
+    const validatedRanges = await iiifTags.searchTags(client, {types: ['sc:Range'], tags: ['Validated']})
+    return {
+      claimed: claimedRanges.length,
+      placed: placedRanges.length,
+      validated: validatedRanges.length,
+    }
   })
 })
 

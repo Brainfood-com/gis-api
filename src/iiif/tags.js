@@ -52,3 +52,23 @@ ON CONFLICT (iiif_override_id, iiif_tag_id) DO UPDATE SET sequence_num = EXCLUDE
   return await client.query(query, [iiifId, tags])
 }
 
+export async function searchTags(client, {types, tags}) {
+  const query = `
+SELECT
+  a.iiif_id, a.iiif_type_id, a.label
+FROM
+  iiif a JOIN iiif_overrides b ON
+    a.external_id = b.external_id
+  JOIN iiif_overrides_tags c ON
+    b.iiif_override_id = c.iiif_override_id
+  JOIN iiif_tags d ON
+    c.iiif_tag_id = d.iiif_tag_id
+WHERE
+  a.iiif_type_id IN (${types.map((type, index) => '$' + (index + 1)).join(', ')})
+  AND
+  LOWER(d.tag) IN (${tags.map((tag, index) => '$' + (index + types.length + 1)).join(', ')})
+  `
+  const result = await client.query(query, [].concat(types, tags.map(tag => tag.toLowerCase())))
+  return result.rows.map(row => row.iiif_id)
+}
+
