@@ -21,7 +21,7 @@ export async function getOne(client, collectionId) {
     label: firstRow.label,
     manifests: await Promise.all(assocResult.rows.map(async row => {
       const manifestId = row.iiif_id_to
-      const manifestTags = await getTags(client, manifestId)
+      const tags = await getTags(client, manifestId)
       return {id: manifestId, type: row.iiif_assoc_type_id, label: row.label, type: row.iiif_type_id, tags}
     })),
     type,
