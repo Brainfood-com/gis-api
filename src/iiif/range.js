@@ -20,6 +20,7 @@ export async function getOne(client, rangeId) {
   const firstOverrideRow = rangeOverrideResult.rows[0] || {}
   return {
     id: firstRow.iiif_id,
+    externalId: firstRow.external_id,
     label: firstRow.label,
     type: firstRow.iiif_type_id,
     viewingHint: firstRow.viewingHint,

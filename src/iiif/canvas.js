@@ -47,6 +47,7 @@ export async function getOne(client, canvasId) {
   const firstOverrideRow = canvasOverrideResult.rows[0] || {}
   return {
     id: firstRow.iiif_id,
+    externalId: firstRow.external_id,
     label: firstRow.label,
     type: firstRow.iiif_type_id,
     format: firstRow.format,

@@ -10,6 +10,7 @@ export async function getOne(client, manifestId) {
     id: firstRow.iiif_id,
     attribution: firstRow.attribution,
     description: firstRow.description,
+    externalId: firstRow.external_id,
     label: firstRow.label,
     license: firstRow.license,
     logo: firstRow.logo,

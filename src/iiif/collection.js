@@ -10,7 +10,7 @@ export async function getAll(client) {
 }
 
 export async function getOne(client, collectionId) {
-  const collectionResult = await client.query("SELECT iiif_id, label FROM iiif WHERE iiif_type_id = $1 AND iiif_id = $2", [type, collectionId])
+  const collectionResult = await client.query("SELECT iiif_id, external_id, label FROM iiif WHERE iiif_type_id = $1 AND iiif_id = $2", [type, collectionId])
   const collectionOverrideResult = await client.query("SELECT * FROM collection_overrides WHERE iiif_id = $1", [collectionId])
   const firstRow = collectionResult.rows[0]
   const firstOverrideRow = collectionOverrideResult.rows[0] || {}
@@ -18,6 +18,7 @@ export async function getOne(client, collectionId) {
   const tags = await getTags(client, collectionId)
   return {
     id: firstRow.iiif_id,
+    externalId: firstRow.external_id,
     label: firstRow.label,
     manifests: await Promise.all(assocResult.rows.map(async row => {
       const manifestId = row.iiif_id_to
