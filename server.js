@@ -64,8 +64,20 @@ async function dbPoolConnection(handler) {
   }
 }
 
+class LimitedPoolProxy {
+  query(...args) {
+    return this.run(client => client.query(...args))
+  }
+
+  run(handler) {
+    return dbConnectionLimit(() => dbPoolConnection(handler))
+  }
+}
+
+const limitedPoolProxy = new LimitedPoolProxy()
+
 export async function dbPoolWorker(handler) {
-  return dbConnectionLimit(() => dbPoolConnection(handler))
+  return handler(limitedPoolProxy)
 }
 
 export async function dbResPoolWorker(res, handler) {
