@@ -39,6 +39,11 @@ export function processGoogleVision(rawGoogleVision) {
   }
 }
 
+export async function getParents(client, canvasId) {
+  const dbResult = await client.query('SELECT DISTINCT range_id FROM range_canvas WHERE iiif_id = $1', [canvasId])
+  return dbResult.rows.map(row => ['sc:Range', row.range_id])
+}
+
 export async function getOne(client, canvasId) {
   const canvasResult = await client.query("SELECT * FROM canvas WHERE iiif_id = $1", [canvasId])
   const canvasOverrideResult = await client.query("SELECT * FROM canvas_overrides WHERE iiif_id = $1", [canvasId])

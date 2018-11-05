@@ -1,5 +1,10 @@
 import {getTags, updateTags} from './tags'
 
+export async function getParents(client, manifestId) {
+  const dbResult = await client.query("SELECT DISTINCT iiif_id_from FROM iiif_assoc WHERE iiif_id_to = $1 AND iiif_assoc_type_id = 'sc:Manifest'", [manifestId])
+  return dbResult.rows.map(row => ['sc:Collection', row.iiif_id_from])
+}
+
 export async function getOne(client, manifestId) {
   const manifestResult = await client.query("SELECT * FROM manifest WHERE iiif_id = $1", [manifestId])
   const manifestOverrideResult = await client.query("SELECT * FROM manifest_overrides WHERE iiif_id = $1", [manifestId])

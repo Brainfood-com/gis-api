@@ -22,18 +22,23 @@ const iiifTypeDescriptors = {
   'sc:Collection': {
     getOverrides: iiifCollection.getOverrides,
     saveOverrides: iiifCollection.setOverrides,
+    getParents: iiifCollection.getParents,
   },
   'sc:Manifest': {
     getOverrides: iiifManifest.getOverrides,
     saveOverrides: iiifManifest.setOverrides,
+    getParents: iiifManifest.getParents,
   },
   'sc:Range': {
     getOverrides: iiifRange.getOverrides,
     saveOverrides: iiifRange.setOverrides,
+    getParents: iiifRange.getParents,
+    dataExport: iiifRange.getGeoJSON,
   },
   'sc:Canvas': {
     getOverrides: iiifCanvas.getOverrides,
     saveOverrides: iiifCanvas.setOverrides,
+    getParents: iiifCanvas.getParents,
   },
 }
 
@@ -163,8 +168,64 @@ async function saveAllOverrides(client) {
   await Promise.all(allOverridesResult.rows.map(row => saveOverridesToDisk(client, row.iiif_id)))
 }
 
+async function findAllParents(client, initialType, initialSet) {
+  const queue = [[initialType, initialSet]]
+  const itemsByType = {}
+  while (queue.length) {
+    const [iiif_type_id, iiif_id] = queue.pop()
+    const byType = itemsByType[iiif_type_id] || (itemsByType[iiif_type_id] = {})
+    if (byType[iiif_id]) {
+      continue
+    }
+    byType[iiif_id] = true
+    const {[iiif_type_id]: {getParents} = {}} = iiifTypeDescriptors
+    if (getParents) {
+      queue.splice(-1, 0, ...(await getParents(client, iiif_id)))
+    }
+  }
+  return Object.entries(itemsByType).reduce((result, entry) => {
+    result[entry[0]] = Object.keys(entry[1])
+    return result
+  }, {})
+}
+
+async function exportOne(client, iiifId) {
+  const iiifInfo = await client.query('SELECT a.iiif_type_id, a.external_id FROM iiif a WHERE a.iiif_id = $1', [iiifId])
+  if (!iiifInfo.rows.length) {
+    return
+  }
+  const {iiif_type_id, external_id} = iiifInfo.rows[0]
+  const {[iiif_type_id]: {dataExport = ids => {}} = {}} = iiifTypeDescriptors
+  const result = await dataExport(client, iiifId)
+  if (!result) {
+    return
+  }
+  const targetName = '/srv/app/geojson/' + escape(external_id) + '.export'
+  const targetBaseName = path.basename(targetName)
+  const targetDirName = path.dirname(targetName)
+  const saveData = JSON.stringify(result)
+  await fse.mkdirs(targetDirName)
+  await fse.writeFile(`${targetDirName}/${targetBaseName}.tmp`, saveData)
+  await fse.rename(`${targetDirName}/${targetBaseName}.tmp`, targetName)
+}
+
+async function exportAll(client) {
+  const allResult = await client.query('SELECT a.iiif_id FROM iiif a')
+  await Promise.all(allResult.rows.map(row => exportOne(client, row.iiif_id)))
+}
+
+async function exportData(client, parentInfo) {
+  return Promise.all(Object.entries(parentInfo).map(async ([iiif_type_id, ids]) => {
+    await Promise.all(ids.map(iiifId => exportOne(client, iiifId)))
+  }))
+}
+
 const app = express()
 app.use(cors())
+
+app.post('/_db/export-all', jsonParser, (req, res) => {
+  dbResPoolWorker(res, client => exportAll(client))
+})
 
 app.post('/_db/load-all', jsonParser, (req, res) => {
   dbResPoolWorker(res, client => loadAllOverrides(client))
@@ -194,6 +255,7 @@ app.post('/collection/:collectionId', jsonParser, (req, res) => {
   dbResPoolWorker(res, async client => {
     await iiifCollection.updateOne(client, collectionId, {notes, tags})
     await saveOverridesToDisk(client, collectionId)
+    await exportData(client, await findAllParents(client, 'sc:Collection', collectionId))
   })
 })
 
@@ -212,6 +274,7 @@ app.post('/manifest/:manifestId', jsonParser, (req, res) => {
   dbResPoolWorker(res, async client => {
     await iiifManifest.updateOne(client, manifestId, {notes, tags})
     await saveOverridesToDisk(client, manifestId)
+    await exportData(client, await findAllParents(client, 'sc:Manifest', manifestId))
   })
 })
 
@@ -231,6 +294,7 @@ app.post('/range/:rangeId', jsonParser, (req, res) => {
   dbResPoolWorker(res, async client => {
     await iiifRange.updateOne(client, rangeId, {notes, reverse, fovAngle, fovDepth, fovOrientation, tags})
     await saveOverridesToDisk(client, rangeId)
+    await exportData(client, await findAllParents(client, 'sc:Range', rangeId))
   })
 })
 
@@ -255,6 +319,7 @@ app.post('/canvas/:canvasId', jsonParser, (req, res) => {
   dbResPoolWorker(res, async client => {
     await iiifCanvas.updateOne(client, canvasId, {notes, exclude, hole, tags})
     await saveOverridesToDisk(client, canvasId)
+    await exportData(client, await findAllParents(client, 'sc:Canvas', canvasId))
   })
 })
 
@@ -264,6 +329,7 @@ app.post('/canvas/:canvasId/point/:sourceId', jsonParser, (req, res) => {
   dbResPoolWorker(res, async client => {
     await iiifCanvas.point.updateOne(client, canvasId, sourceId, {priority, point})
     await saveOverridesToDisk(client, canvasId)
+    await exportData(client, await findAllParents(client, 'sc:Canvas', canvasId))
   })
 })
 
@@ -272,6 +338,7 @@ app.delete('/canvas/:canvasId/point/:sourceId', jsonParser, (req, res) => {
   dbResPoolWorker(res, async client => {
     await iiifCanvas.point.deleteOne(client, canvasId, sourceId)
     await saveOverridesToDisk(client, canvasId)
+    await exportData(client, await findAllParents(client, 'sc:Canvas', canvasId))
   })
 })
 

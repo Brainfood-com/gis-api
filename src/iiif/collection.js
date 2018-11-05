@@ -9,6 +9,10 @@ export async function getAll(client) {
   })
 }
 
+export async function getParents(client, collectionId) {
+  return []
+}
+
 export async function getOne(client, collectionId) {
   const collectionResult = await client.query("SELECT iiif_id, external_id, label FROM iiif WHERE iiif_type_id = $1 AND iiif_id = $2", [type, collectionId])
   const collectionOverrideResult = await client.query("SELECT * FROM collection_overrides WHERE iiif_id = $1", [collectionId])

@@ -12,6 +12,11 @@ import {dbPoolWorker} from '../../server'
 
 const parallelRouteLimit = promiseLimit(getenv.int('CALCULATE_ROUTE_CONCURRENCY', 1))
 
+export async function getParents(client, rangeId) {
+  const dbResult = await client.query("SELECT DISTINCT a.iiif_id_from FROM iiif_assoc a JOIN iiif b ON a.iiif_id_from = b.iiif_id AND b.iiif_type_id = 'sc:Manifest' WHERE a.iiif_id_to = $1 AND a.iiif_assoc_type_id = 'sc:Range'", [rangeId])
+  return dbResult.rows.map(row => ['sc:Manifest', row.iiif_id_from])
+}
+
 export async function getOne(client, rangeId) {
   const rangeResult = await client.query("SELECT * FROM range WHERE iiif_id = $1", [rangeId])
   const rangeOverrideResult = await client.query("SELECT * FROM range_overrides WHERE iiif_id = $1", [rangeId])
