@@ -33,7 +33,7 @@ const iiifTypeDescriptors = {
     getOverrides: iiifRange.getOverrides,
     saveOverrides: iiifRange.setOverrides,
     getParents: iiifRange.getParents,
-    dataExport: iiifRange.getGeoJSON,
+    dataExport: iiifRange.dataExport,
   },
   'sc:Canvas': {
     getOverrides: iiifCanvas.getOverrides,
@@ -115,6 +115,14 @@ function isNotNeeded(value) {
   return false
 }
 
+async function writeOneFile(targetName, fileContents) {
+  const targetBaseName = path.basename(targetName)
+  const targetDirName = path.dirname(targetName)
+  await fse.mkdirs(targetDirName)
+  await fse.writeFile(`${targetDirName}/${targetBaseName}.tmp`, fileContents)
+  await fse.rename(`${targetDirName}/${targetBaseName}.tmp`, targetName)
+}
+
 async function saveOverridesToDisk(client, iiifId) {
   const iiifInfo = await client.query('SELECT b.iiif_override_id, a.external_id, a.iiif_type_id, b.notes FROM iiif a JOIN iiif_overrides b ON a.external_id = b.external_id WHERE a.iiif_id = $1', [iiifId])
   if (iiifInfo.rows.length === 0) {
@@ -133,11 +141,7 @@ async function saveOverridesToDisk(client, iiifId) {
     return key === '' || !isNotNeeded(value) ? value : undefined
   }, 1)
   const targetName = '/srv/app/exports/' + escape(external_id) + '.iiif'
-  const targetBaseName = path.basename(targetName)
-  const targetDirName = path.dirname(targetName)
-  await fse.mkdirs(targetDirName)
-  await fse.writeFile(`${targetDirName}/${targetBaseName}.tmp`, saveData)
-  await fse.rename(`${targetDirName}/${targetBaseName}.tmp`, targetName)
+  await writeOneFile(targetName, saveData)
 }
 
 async function loadOverrideFromDisk(client, file) {
@@ -195,18 +199,18 @@ async function exportOne(client, iiifId) {
     return
   }
   const {iiif_type_id, external_id} = iiifInfo.rows[0]
-  const {[iiif_type_id]: {dataExport = ids => {}} = {}} = iiifTypeDescriptors
+  const {[iiif_type_id]: {dataExport = id => null} = {}} = iiifTypeDescriptors
   const result = await dataExport(client, iiifId)
   if (!result) {
     return
   }
-  const targetName = '/srv/app/geojson/' + escape(external_id) + '.export'
-  const targetBaseName = path.basename(targetName)
-  const targetDirName = path.dirname(targetName)
-  const saveData = JSON.stringify(result)
-  await fse.mkdirs(targetDirName)
-  await fse.writeFile(`${targetDirName}/${targetBaseName}.tmp`, saveData)
-  await fse.rename(`${targetDirName}/${targetBaseName}.tmp`, targetName)
+  const basePath = '/srv/app/geojson/' + escape(external_id)
+  await Promise.all(Object.keys(result).map(async key => {
+    const targetName = basePath + key
+    const resultData = result[key]
+    const fileContents = typeof resultData === 'string' ? resultData : JSON.stringify(resultData)
+    await writeOneFile(targetName, fileContents)
+  }))
 }
 
 async function exportAll(client) {

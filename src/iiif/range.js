@@ -214,10 +214,8 @@ const addressFieldSeparators = {
     unit_no: ',',
 }
 
-export async function getGeoJSON(client, rangeId) {
+async function gatherAllExportData(client, rangeId) {
   const range = await exports.getOne(client, rangeId)
-  const {fovOrientation} = range
-
 
   const canvasPoints = await getCanvasPoints(client, rangeId)
   const allBuildings = {}
@@ -225,6 +223,29 @@ export async function getGeoJSON(client, rangeId) {
   const ignore = (await buildings.getBuildings(client, ...(Object.keys(allBuildings).map(id => parseInt(id))))).forEach(building => {
     allBuildings[building.id] = building
   })
+
+  return {
+    range,
+    canvasPoints,
+    allBuildings,
+  }
+}
+
+export async function getGeoJSON(client, rangeId) {
+  const exportData = await gatherAllExportData(client, rangeId)
+  return translateToGeoJSON(exportData)
+}
+
+export async function dataExport(client, rangeId) {
+  const exportData = await gatherAllExportData(client, rangeId)
+  return {
+    '.export': translateToGeoJSON(exportData),
+  }
+}
+
+function translateToGeoJSON(exportData) {
+  const {range, canvasPoints, allBuildings} = exportData
+  const {fovOrientation} = range
 
   return {
     type: 'FeatureCollection',
