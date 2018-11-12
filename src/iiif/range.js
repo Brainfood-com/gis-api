@@ -263,7 +263,7 @@ function translateToGeoJSON(exportData) {
     },
     features: canvasPoints.map(canvasPoint => {
       const {id, bearing, point, googleVision = {}} = canvasPoint
-      const cameraDirection = (bearing + (fovOrientation === 'left' ? 0 : 180)) % 360
+      const cameraDirection = (bearing + (fovOrientation === 'left' ? -90 : 90)) % 360
       const pointBuildings = (canvasPoint.buildings || []).map(id => allBuildings[id]).filter(building => building)
       const discoveredTaxData = {
         yearbuilt: null,
