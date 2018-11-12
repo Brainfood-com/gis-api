@@ -3,6 +3,7 @@ import turfBearing from '@turf/bearing'
 import turfLength from '@turf/length'
 import promiseLimit from 'promise-limit'
 import getenv from 'getenv'
+import csvStringify from 'csv-stringify/lib/sync'
 
 import {processGoogleVision} from './canvas'
 import {getTags, updateTags} from './tags'
@@ -238,8 +239,57 @@ export async function getGeoJSON(client, rangeId) {
 
 export async function dataExport(client, rangeId) {
   const exportData = await gatherAllExportData(client, rangeId)
+  const {range} = exportData
+  const {fovOrientation} = range
+  const allBuildings = {}, allTaxlots = {}
+  Object.values(exportData.allBuildings).forEach(buildingAndTaxData => {
+    const {taxdata, geojson, ...rest} = buildingAndTaxData
+    const {id} = rest
+    allBuildings[id] = rest
+    if (taxdata) {
+      const {ain} = taxdata
+      allTaxlots[ain] = taxdata
+    }
+  })
   return {
     '.export': translateToGeoJSON(exportData),
+    '-range.csv': csvStringify([
+      {
+        imagecount: exportData.canvasPoints.length,
+        date: '?',
+        starttime: '?',
+        stoptime: '?',
+        startintersection: '?',
+        stopintersection: '?',
+        photographer: '?',
+        driver: '?',
+        subjectstreet: '?',
+        camerainfo: '?'
+      },
+    ], {header: true}),
+    '-buildings.csv': csvStringify(Object.values(allBuildings), {header: true}),
+    '-taxlots.csv': csvStringify(Object.values(allTaxlots), {header: true}),
+    '-canvasPoints.csv': csvStringify(exportData.canvasPoints.map(canvasPoint => {
+      const {bearing, buildings, camera, googleVision, overrides, point, ...rest} = canvasPoint
+      const cameraDirection = (bearing + (fovOrientation === 'left' ? 90 : -90)) % 360
+      return {
+        ...rest,
+        latitude: point ? point.coordinates[1] : undefined,
+        longitude: point ? point.coordinates[0] : undefined,
+        streetview: point ? `https://maps.google.com/maps/@?api=1&map_action=pano&viewpoint=${point.coordinates[1]},${point.coordinates[0]}&heading=${cameraDirection}` : null,
+        ...((buildings || []).reduce((accumulator, buildingId) => {
+          if (buildingId) {
+            accumulator.buildings = accumulator.buildings ? accumulator.buildings + ',' + buildingId : buildingId
+            const {[buildingId]: {ain} = {}} = allBuildings
+            const {[ain]: taxlot} = allTaxlots
+            if (taxlot) {
+              accumulator.taxlots = accumulator.taxlots ?  accumulator.taxlots + ',' + ain : ain
+            }
+          }
+          return accumulator
+        }, {buildings: '', taxlots: ''}))
+      }
+    }), {header: true}),
   }
 }
 
