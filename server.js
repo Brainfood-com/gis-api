@@ -55,6 +55,17 @@ const pool = new Pool({
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
 })
+pool.on('connect', client => {
+  client.on('notification', msg => {
+    console.log(`NOTIFICATION: ${msg.channel}: ${msg.payload}`)
+  })
+  client.on('notice', msg => {
+    const {notice} = msg
+    if (true || notice) {
+      console.log('NOTICE:', '' + msg)
+    }
+  })
+})
 
 const dbConnectionLimit = promiseLimit(getenv.int('DB_CONNECTION_LIMIT', 10))
 
@@ -159,6 +170,24 @@ async function loadOverrideFromDisk(client, file) {
   return iiifTypeDescriptors[iiif_type_id].saveOverrides(client, iiif_id, dataToSave)
 }
 
+export function wrapForTransaction(handler) {
+  return async (client, ...rest) => {
+    console.log('BEGIN')
+    await client.query('BEGIN')
+    let r
+    try {
+      r = await handler(client, ...rest)
+    } catch (e) {
+      console.log('ROLLBACK')
+      await client.query('ROLLBACK')
+      throw e
+    }
+    console.log('COMMIT')
+    await client.query('COMMIT')
+    return r
+  }
+}
+
 async function loadAllOverrides(client) {
   const iiifFiles = (await dir.promiseFiles('/srv/app/exports')).filter(file => file.match(/\.iiif$/))
   for (const file of iiifFiles) {
@@ -232,7 +261,7 @@ app.post('/_db/export-all', jsonParser, (req, res) => {
 })
 
 app.post('/_db/load-all', jsonParser, (req, res) => {
-  dbResPoolWorker(res, client => loadAllOverrides(client))
+  dbResPoolWorker(res, client => wrapForTransaction(loadAllOverrides)(client))
 })
 
 app.post('/_db/save-all', jsonParser, (req, res) => {
