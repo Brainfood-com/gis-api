@@ -273,6 +273,11 @@ app.get('/buildings', async (req, res) => {
   dbResPoolWorker(res, client => buildings.getBuildings(client, ...ids))
 })
 
+app.get('/buildings/:buildingId/canvases', async (req, res) => {
+  const {buildingId} = req.params
+  dbResPoolWorker(res, client => buildings.getBuildingCanvases(client, buildingId))
+})
+
 app.get('/collection', async (req, res) => {
   dbResPoolWorker(res, client => iiifCollection.getAll(client))
 })

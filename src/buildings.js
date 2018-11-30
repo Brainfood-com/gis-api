@@ -1,4 +1,5 @@
 
+import {processGoogleVision} from './iiif/canvas'
 
 export async function getBuildings(client, ...ogcFids) {
   let query = `
@@ -30,5 +31,37 @@ WHERE
   const result = await client.query(query, ogcFids)
   return result.rows.map(({ogc_fid: id, geojson, ...rest}) => {
     return {...rest, id, geojson: geojson ? JSON.parse(geojson) : null}
+  })
+}
+
+export async function getBuildingCanvases(client, ogcFid) {
+  let query = `
+SELECT
+  b.ogc_fid,
+  c.bearing,
+  ST_AsGeoJSON(c.point) AS point,
+  ST_AsGeoJSON(c.camera) AS camera,
+  d.*
+FROM
+  lariac_buildings b JOIN routing_canvas_range_interpolation_cache c ON
+    ST_Intersects(c.camera, b.wkb_geometry)
+  JOIN range_canvas d ON
+    c.range_id = d.range_id
+    AND
+    c.iiif_id = d.iiif_id
+WHERE
+  b.ogc_fid = $1
+ORDER BY
+  d.range_id, d.sequence_num
+`.replace(/[\t\r\n ]+/g, ' ')
+  const result = await client.query(query, [ogcFid])
+  return result.rows.map(({ogc_fid: id, camera, point, google_vision, ...rest}) => {
+    return {
+      id,
+      point: point ? JSON.parse(point) : undefined,
+      camera: camera ? JSON.parse(camera) : undefined,
+      googleVision: processGoogleVision(google_vision),
+      ...rest,
+    }
   })
 }
