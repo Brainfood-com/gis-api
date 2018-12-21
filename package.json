@@ -36,6 +36,7 @@
     "fs-extra": "^7.0.0",
     "getenv": "^0.7.0",
     "node-dir": "^0.1.17",
+    "node-fetch": "^2.3.0",
     "pg": "^7.4.3",
     "promise-limit": "^2.7.0"
   }

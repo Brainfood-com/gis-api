@@ -10,6 +10,7 @@ import { Client, Pool } from 'pg'
 import promiseLimit from 'promise-limit'
 import getenv from 'getenv'
 
+import {search} from './src/search'
 import {getTags, updateTags} from './src/iiif/tags'
 import * as iiifCollection from './src/iiif/collection'
 import * as iiifManifest from './src/iiif/manifest'
@@ -255,6 +256,11 @@ async function exportData(client, parentInfo) {
 
 const app = express()
 app.use(cors())
+
+app.get('/search', async (req, res) => {
+  const {address} = req.query
+  dbResPoolWorker(res, client => search(client, {address}))
+})
 
 app.post('/_db/export-all', jsonParser, (req, res) => {
   dbResPoolWorker(res, client => exportAll(client))
