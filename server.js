@@ -11,6 +11,7 @@ import promiseLimit from 'promise-limit'
 import getenv from 'getenv'
 
 import {search} from './src/search'
+import * as iiif from './src/iiif'
 import {getTags, updateTags} from './src/iiif/tags'
 import * as iiifCollection from './src/iiif/collection'
 import * as iiifManifest from './src/iiif/manifest'
@@ -202,7 +203,7 @@ async function saveAllOverrides(client) {
   await Promise.all(allOverridesResult.rows.map(row => saveOverridesToDisk(client, row.iiif_id)))
 }
 
-async function findAllParents(client, initialType, initialSet) {
+export async function findAllParents(client, initialType, initialSet) {
   const queue = [[initialType, initialSet]]
   const itemsByType = {}
   while (queue.length) {
@@ -272,6 +273,11 @@ app.post('/_db/load-all', jsonParser, (req, res) => {
 
 app.post('/_db/save-all', jsonParser, (req, res) => {
   dbResPoolWorker(res, client => saveAllOverrides(client))
+})
+
+app.post('/iiif/detectType', jsonParser, async (req, res) => {
+  const {body: {iiifId, externalId}} = req
+  dbResPoolWorker(res, client => iiif.detectType(client, {iiifId, externalId}))
 })
 
 app.get('/buildingsPlaced(/:rangeId)?', async (req, res) => {
