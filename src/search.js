@@ -25,7 +25,7 @@ export async function search(client, searchContext) {
 
 
   // Limit lookup to the region of photos that have been placed
-  const boundsResult = await client.query('SELECT ST_AsGeoJSON(geometry) AS global_bounds FROM routing_canvas_range_interpolation_summary WHERE name = $1', ['global_bounds'])
+  const boundsResult = await client.query('SELECT ST_AsGeoJSON(ST_Extent(geometry)) AS global_bounds FROM rcri_range_summary WHERE name = $1', ['global_bounds'])
   const bounds = JSON.parse(boundsResult.rows[0].global_bounds).coordinates[0].reduce((result, point) => {
     return {
       ne: {
