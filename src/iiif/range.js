@@ -131,7 +131,7 @@ SELECT
   routing_canvas_range_camera.addr_fullname,
   routing_canvas_range_camera.addr_zipcode,
   routing_canvas_range_camera.bearing,
-	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'point', ST_AsGeoJSON(point))) FROM canvas_point_overrides WHERE iiif_id = range_canvas.iiif_id) AS overrides
+	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'point', ST_AsGeoJSON(point))) FROM canvas_point_overrides WHERE iiif_id = range_canvas.iiif_id AND point IS NOT NULL) AS overrides
 FROM
   range_canvas JOIN routing_canvas_range_camera ON
     range_canvas.range_id = routing_canvas_range_camera.range_id
