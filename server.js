@@ -274,6 +274,11 @@ app.post('/_db/save-all', jsonParser, (req, res) => {
   dbResPoolWorker(res, client => saveAllOverrides(client))
 })
 
+app.get('/buildingsPlaced(/:rangeId)?', async (req, res) => {
+  const {rangeId} = req.params
+  dbResPoolWorker(res, client => buildings.getBuildingsPlaced(client, rangeId))
+})
+
 app.get('/buildings', async (req, res) => {
   const ids = Array.isArray(req.query.id) ? req.query.id : [req.query.id]
   dbResPoolWorker(res, client => buildings.getBuildings(client, ...ids))
