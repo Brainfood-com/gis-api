@@ -4,6 +4,7 @@ import fse from 'fs-extra'
 import path from 'path'
 import dir from 'node-dir'
 import express from 'express'
+import compression from 'compression'
 import cors from 'cors'
 import bodyParser from 'body-parser'
 import { Client, Pool } from 'pg'
@@ -257,6 +258,7 @@ async function exportData(client, parentInfo) {
 
 const app = express()
 app.use(cors())
+app.use(compression({level: 9}))
 
 app.get('/search', async (req, res) => {
   const {address} = req.query

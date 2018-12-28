@@ -29,6 +29,7 @@
     "@turf/turf": "^5.1.6",
     "body-parser": "^1.18.3",
     "color": "^3.0.0",
+    "compression": "^1.7.3",
     "cors": "^2.8.4",
     "csv-stringify": "^4.3.1",
     "esm": "^3.0.82",
