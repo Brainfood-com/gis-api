@@ -135,19 +135,20 @@ SELECT DISTINCT
   a.range_ids,
   a.iiif_ids,
   a.building_id,
-  ST_AsGeoJSON(c.wkb_geometry) AS geojson
+  ST_AsGeoJSON(b.wkb_geometry) AS geojson
 FROM
-  building_agg a JOIN rcri_buildings b ON
-    a.building_id = b.building_id
-	JOIN lariac_buildings c ON
-    a.building_id = c.ogc_fid
+  building_agg a JOIN lariac_buildings b ON
+    a.building_id = b.ogc_fid
 `
   const args = []
+  const condition = ['TRUE']
+  const extraFrom = []
   if (rangeId) {
-    query += 'WHERE b.range_id = $1'
+    extraFrom.push('JOIN rcri_buildings r ON a.building_id = r.building_id')
+    condition.push('r.range_id = $1')
     args.push(rangeId)
   }
-  const result = await client.query(query, args)
+  const result = await client.query(query + extraFrom.map(i => ` ${i}`).join('') + ' WHERE ' + condition.join(' AND '), args)
   return result.rows.map(row => {
     const {
       claimed_count: claimedCount,
