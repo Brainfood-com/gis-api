@@ -4,12 +4,16 @@ import fse from 'fs-extra'
 import path from 'path'
 import dir from 'node-dir'
 import express from 'express'
+import session from 'express-session'
+import cookieParser from 'cookie-parser'
 import compression from 'compression'
 import cors from 'cors'
 import bodyParser from 'body-parser'
 import { Client, Pool } from 'pg'
 import promiseLimit from 'promise-limit'
 import getenv from 'getenv'
+import passport from 'passport'
+import passportLocal from 'passport-local'
 
 import {search} from './src/search'
 import * as iiif from './src/iiif'
@@ -45,7 +49,9 @@ const iiifTypeDescriptors = {
   },
 }
 
+const VHOST_SUFFIX = process.env.VHOST_SUFFIX
 const jsonParser = bodyParser.json()
+const urlParser = bodyParser.urlencoded()
 const dbConf = {
 	user: 'gis',
 	host: 'postgresql',
@@ -257,8 +263,163 @@ async function exportData(client, parentInfo) {
 }
 
 const app = express()
-app.use(cors())
+app.use(cors({
+  credentials: true,
+  origin: `http://${VHOST_SUFFIX}`,
+}))
 app.use(compression({level: 9}))
+app.use(cookieParser())
+app.use(session({
+  key: 'gis_session',
+  secret: 'aaa5212b457b72f55125df8e9eb362d6',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    maxAge: 24*60*60*1000,
+  },
+}))
+
+class UserConfig {
+  constructor(file) {
+    this._file = file
+  }
+
+  express() {
+    return async (req, res, next) => {
+      const userDb = req.userDb = await userConfig.initialize()
+      const {user} = req
+      console.log('user', user)
+      req.userPermissions = await userDb.getGroups(user)
+      next()
+    }
+  }
+
+  async initialize() {
+    const {groups, users} = await fse.readJson(this._file)
+    const {byId, byUsername} = users.reduce((users, user) => {
+      users.byId[user.id] = user
+      users.byUsername[user.username] = user
+      return users
+    }, {byId: {}, byUsername: {}})
+    return new UserDb(groups, byId, byUsername)
+  }
+
+  async findById(id) {
+    const userDb = await this.initialize()
+    return userDb.findById(id)
+  }
+
+  async findByUsername(username) {
+    const userDb = await this.initialize()
+    return userDb.findByUsername(username)
+  }
+}
+
+class UserDb {
+  constructor(groups, byId, byUsername) {
+    this._groups = groups
+    this._byId = byId
+    this._byUsername = byUsername
+  }
+  
+  async findByUsername(username) {
+    return this._byUsername[username]
+  }
+
+  async findById(id) {
+    return this._byId[id]
+  }
+
+  async getGroups(user) {
+    const groups = user && user.groups || ['anonymous']
+    console.log('getGroups', user)
+    return groups.reduce((permissions, group) => {
+      const {[group]: groupPermissions = []} = this._groups
+      console.log('groupPermissions', groupPermissions)
+      groupPermissions.forEach(groupPermission => permissions[groupPermission] = true)
+      return permissions
+    }, {})
+  }
+}
+
+const userConfig = new UserConfig('/srv/app/etc/users.js')
+
+passport.use(new passportLocal.Strategy(async (username, password, done) => {
+  const user = await userConfig.findByUsername(username)
+  if (user) {
+    if (user.password === password) {
+      return done(null, user)
+    } else {
+      return done(null, false, {message: 'Invalid user or password'})
+    }
+  } else {
+    return done(null, false, {message: 'Invalid user or password'})
+  }
+}))
+passport.serializeUser((user, done) => {
+  done(null, user.id)
+})
+passport.deserializeUser(async (id, done) => {
+  const user = await userConfig.findById(id)
+  console.log('deserializeUser', id, user)
+  return done(null, user)
+})
+
+app.use(passport.initialize())
+app.use(passport.session())
+app.use(userConfig.express())
+app.use((req, res, next) => {
+  // auto-logout
+  if (req.cookies.gis_session && !req.user) {
+    //res.clearCookie('gis_session')
+  }
+  next()
+})
+
+const requirePermission = permission => {
+  return (req, res, next) => {
+    if (req.userPermissions) {
+      if (req.userPermissions[permission]) {
+        next()
+      } else {
+        res.status(500)
+        res.send({type: 'permission-denied'})
+      }
+    } else {
+      res.status(500)
+      res.send({type: 'no-permissions'})
+    }
+  }
+}
+
+app.post('/user/logout', (req, res) => {
+  req.logout()
+  res.clearCookie('gis_session')
+  res.redirect('/user/info')
+})
+
+function sendUserInfo(req, res) {
+  const {user} = req
+  const result = {
+    isLoggedIn: user ? true : false,
+    permissions: Object.keys(req.userPermissions),
+  }
+
+  if (user) {
+    result.name = user.name
+  }
+  res.send(result)
+}
+
+app.post('/user/login', urlParser, passport.authenticate('local'), (req, res) => {
+  res.redirect('/user/info')
+})
+
+app.get('/user/info', sendUserInfo)
+
+app.post('/user/permissions', (req, res) => {
+  res.send(Object.keys(req.userPermissions))
+})
 
 app.get('/search', async (req, res) => {
   const {address} = req.query
