@@ -220,7 +220,7 @@ export async function findAllParents(client, initialType, initialSet) {
     }
   }
   return Object.entries(itemsByType).reduce((result, entry) => {
-    result[entry[0]] = Object.keys(entry[1])
+    result[entry[0]] = Object.keys(entry[1]).map(id => parseInt(id))
     return result
   }, {})
 }
