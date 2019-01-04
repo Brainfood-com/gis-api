@@ -49,6 +49,7 @@ SELECT
   canvas_overrides.notes,
   canvas_overrides.exclude,
   canvas_overrides.hole,
+  (SELECT array_agg(ogc_fid) FROM lariac_buildings WHERE ST_Intersects(camera, wkb_geometry)) AS buildings,
 	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'point', ST_AsGeoJSON(point))) FROM canvas_point_overrides WHERE iiif_id = d.iiif_id) AS overrides,
   d.*
 FROM
