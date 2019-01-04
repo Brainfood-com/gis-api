@@ -9,7 +9,7 @@ import {processGoogleVision} from './canvas'
 import {getTags, updateTags} from './tags'
 import * as buildings from '../buildings'
 
-import {dbPoolWorker} from '../../server'
+import {dbPoolWorker} from '../dbPool'
 
 const parallelRouteLimit = promiseLimit(getenv.int('CALCULATE_ROUTE_CONCURRENCY', 1))
 
