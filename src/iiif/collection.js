@@ -1,4 +1,5 @@
 import {getTags, updateTags} from './tags'
+import * as iiifValues from './values'
 
 const type = 'sc:Collection'
 
@@ -18,7 +19,7 @@ export async function getOne(client, collectionId) {
   const collectionOverrideResult = await client.query("SELECT * FROM collection_overrides WHERE iiif_id = $1", [collectionId])
   const firstRow = collectionResult.rows[0]
   const firstOverrideRow = collectionOverrideResult.rows[0] || {}
-  const assocResult = await client.query("SELECT a.iiif_id_to, a.iiif_assoc_type_id, b.label, b.iiif_type_id FROM iiif_assoc a JOIN iiif b ON a.iiif_id_to = b.iiif_id WHERE a.iiif_id_from = $1 ORDER BY a.sequence_num, b.label", [collectionId])
+  const assocResult = await client.query("SELECT a.iiif_id_to, a.iiif_assoc_type_id, b.label, b.iiif_type_id, c.values FROM iiif_assoc a JOIN iiif b ON a.iiif_id_to = b.iiif_id LEFT JOIN iiif_values c ON b.iiif_id = c.iiif_id WHERE a.iiif_id_from = $1 ORDER BY a.sequence_num, b.label", [collectionId])
   const tags = await getTags(client, collectionId)
   return {
     id: firstRow.iiif_id,
@@ -27,7 +28,8 @@ export async function getOne(client, collectionId) {
     manifests: await Promise.all(assocResult.rows.map(async row => {
       const manifestId = row.iiif_id_to
       const tags = await getTags(client, manifestId)
-      return {id: manifestId, type: row.iiif_assoc_type_id, label: row.label, type: row.iiif_type_id, tags}
+      const values = iiifValues.parseRows(row.values)
+      return {id: manifestId, type: row.iiif_assoc_type_id, label: row.label, type: row.iiif_type_id, tags, values}
     })),
     type,
     notes: firstOverrideRow.notes,

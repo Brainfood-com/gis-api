@@ -21,6 +21,7 @@ import * as iiifManifest from './src/iiif/manifest'
 import * as iiifRange from './src/iiif/range'
 import * as iiifCanvas from './src/iiif/canvas'
 import * as iiifTags from './src/iiif/tags'
+import * as iiifValues from './src/iiif/values'
 import * as buildings from './src/buildings'
 
 const iiifTypeDescriptors = {
@@ -101,6 +102,7 @@ async function saveOverridesToDisk(client, iiifId) {
     iiif_type_id,
     notes,
     tags: await getTags(client, iiifId),
+    values: await iiifValues.getValues(client, iiifId),
     _overrides: await iiifTypeDescriptors[iiif_type_id].getOverrides(client, iiif_override_id)
   }
   const saveData = JSON.stringify(dataToSave, (key, value) => {
@@ -120,8 +122,9 @@ async function loadOverrideFromDisk(client, file) {
     return
   }
   const {iiif_id} = firstRow
-  const dataToSave = {notes, tags, ..._overrides}
+  const dataToSave = {notes, tags, values, ..._overrides}
   console.log('saving', external_id, iiif_id, dataToSave)
+  await iiifValues.updateValues(iiif_id, values)
   return iiifTypeDescriptors[iiif_type_id].saveOverrides(client, iiif_id, dataToSave)
 }
 
@@ -393,7 +396,12 @@ app.get('/collection', async (req, res) => {
 
 app.get('/collection/:collectionId', (req, res) => {
   const {collectionId} = req.params
-  dbResPoolWorker(res, client => iiifCollection.getOne(client, collectionId))
+  dbResPoolWorker(res, async client => {
+    const result = {}
+    const base = await iiifCollection.getOne(client, collectionId)
+    const values = await iiifValues.getValues(client, collectionId)
+    return {...base, values}
+  })
 })
 
 app.post('/collection/:collectionId', jsonParser, (req, res) => {
@@ -412,14 +420,20 @@ app.get('/manifest', (req, res) => {
 
 app.get('/manifest/:manifestId', (req, res) => {
   const {manifestId} = req.params
-  dbResPoolWorker(res, client => iiifManifest.getOne(client, manifestId))
+  dbResPoolWorker(res, async client => {
+    const result = {}
+    const base = await iiifManifest.getOne(client, manifestId)
+    const values = await iiifValues.getValues(client, manifestId)
+    return {...base, values}
+  })
 })
 
 app.post('/manifest/:manifestId', jsonParser, (req, res) => {
   const {manifestId} = req.params
-  const {body: {notes, tags}} = req
+  const {body: {notes, tags, values}} = req
   dbResPoolWorker(res, async client => {
     await iiifManifest.updateOne(client, manifestId, {notes, tags})
+    await iiifValues.updateValues(client, manifestId, values)
     await saveOverridesToDisk(client, manifestId)
     await exportData(client, await findAllParents(client, 'sc:Manifest', manifestId))
   })
@@ -432,7 +446,12 @@ app.get('/manifest/:manifestId/structures', (req, res) => {
 
 app.get('/range/:rangeId', (req, res) => {
   const {rangeId} = req.params
-  dbResPoolWorker(res, client => iiifRange.getOne(client, rangeId))
+  dbResPoolWorker(res, async client => {
+    const result = {}
+    const base = await iiifRange.getOne(client, rangeId)
+    const values = await iiifValues.getValues(client, rangeId)
+    return {...base, values}
+  })
 })
 
 app.post('/range/:rangeId', jsonParser, (req, res) => {
@@ -457,7 +476,12 @@ app.get('/range/:rangeId/geoJSON', (req, res) => {
 
 app.get('/canvas/:canvasId', (req, res) => {
   const {canvasId} = req.params
-  dbResPoolWorker(res, client => iiifCanvas.getOne(client, canvasId))
+  dbResPoolWorker(res, async client => {
+    const result = {}
+    const base = await iiifCanvas.getOne(client, canvasId)
+    const values = await iiifValues.getValues(client, canvasId)
+    return {...base, values}
+  })
 })
 
 app.post('/canvas/:canvasId', jsonParser, (req, res) => {

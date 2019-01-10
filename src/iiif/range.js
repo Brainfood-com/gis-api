@@ -7,6 +7,7 @@ import csvStringify from 'csv-stringify/lib/sync'
 
 import {processGoogleVision} from './canvas'
 import {getTags, updateTags} from './tags'
+import * as iiifValues from './values'
 import * as buildings from '../buildings'
 
 import {dbPoolWorker} from '../dbPool'
@@ -131,6 +132,7 @@ SELECT
   routing_canvas_range_camera.addr_fullname,
   routing_canvas_range_camera.addr_zipcode,
   routing_canvas_range_camera.bearing,
+  iiif_values.values,
 	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'point', ST_AsGeoJSON(point))) FROM canvas_point_overrides WHERE iiif_id = range_canvas.iiif_id AND point IS NOT NULL) AS overrides
 FROM
   range_canvas JOIN routing_canvas_range_camera ON
@@ -139,13 +141,15 @@ FROM
     range_canvas.iiif_id = routing_canvas_range_camera.iiif_id
   LEFT JOIN canvas_overrides ON
     range_canvas.iiif_id = canvas_overrides.iiif_id
+  LEFT JOIN iiif_values ON
+    range_canvas.iiif_id = iiif_values.iiif_id
 WHERE
 	range_canvas.range_id = $1
 ORDER BY
 	iiif_id
 `.replace(/[\t\r\n ]+/g, ' ')
   const manifestRangeMembersResult = await client.query(query, [rangeId])
-  const canvasPoints = manifestRangeMembersResult.rows.map(({iiif_id: id, point, camera, buildings, overrides, bearing, google_vision, ...row}, index) => {
+  const canvasPoints = manifestRangeMembersResult.rows.map(({iiif_id: id, point, camera, buildings, overrides, bearing, google_vision, values, ...row}, index) => {
     if (overrides) {
       overrides.forEach(override => {
         override.point = JSON.parse(override.point || null)
@@ -160,6 +164,7 @@ ORDER BY
       overrides,
       bearing: radiansToDegrees(bearing),
       googleVision: processGoogleVision(google_vision),
+      values: iiifValues.parseRows(values),
       ...row
     }
     return result
