@@ -56,7 +56,7 @@ export async function getOverrides(client, iiifOverrideId) {
 }
 
 export async function getStructures(client, manifestId) {
-  const manifestRangesResult = await client.query("SELECT a.iiif_id_to AS range_id, b.iiif_type_id, b.label, c.viewing_hint, d.values FROM iiif_assoc a JOIN iiif b ON a.iiif_id_to = b.iiif_id AND a.iiif_assoc_type_id = 'sc:Range' JOIN iiif_range c ON b.iiif_id = c.iiif_id LEFT JOIN iiif_values d ON b.iiif_id = d.iiif_id WHERE a.iiif_id_from = $1 ORDER BY a.sequence_num, b.label", [manifestId])
+  const manifestRangesResult = await client.query("SELECT a.iiif_id_to AS range_id, b.external_id, b.iiif_type_id, b.label, c.viewing_hint, d.values FROM iiif_assoc a JOIN iiif b ON a.iiif_id_to = b.iiif_id AND a.iiif_assoc_type_id = 'sc:Range' JOIN iiif_range c ON b.iiif_id = c.iiif_id LEFT JOIN iiif_values d ON b.iiif_id = d.iiif_id WHERE a.iiif_id_from = $1 ORDER BY a.sequence_num, b.label", [manifestId])
   const manifestRangeMembersResult = await client.query(`
 WITH has_point_override AS (
   SELECT
@@ -103,10 +103,10 @@ ORDER BY
     }
   })
   const structures = await Promise.all(manifestRangesResult.rows.map(async rangeRow => {
-    const {range_id: rangeId, label, iiif_type_id: type, viewing_hint: viewingHint, values} = rangeRow
+    const {range_id: rangeId, external_id: externalId, label, iiif_type_id: type, viewing_hint: viewingHint, values} = rangeRow
     const members = rangesToMembers[rangeId] || {}
     const tags = await getTags(client, rangeId)
-    return {...members, id: rangeId, label, type, viewingHint, tags, values: iiifValues.parseRows(values)}
+    return {...members, id: rangeId, externalId, label, type, viewingHint, tags, values: iiifValues.parseRows(values)}
   }))
   return structures
 }
