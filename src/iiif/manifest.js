@@ -56,6 +56,8 @@ export async function getOverrides(client, iiifOverrideId) {
 }
 
 export async function getStructures(client, manifestId) {
+  const manifestValues = await iiifValues.getValues(client, manifestId)
+  const manifestYear = manifestValues.year
   const manifestRangesResult = await client.query(`
 SELECT
   a.iiif_id_to AS range_id,
@@ -128,7 +130,7 @@ ORDER BY
     const {range_id: rangeId, external_id: externalId, label, iiif_type_id: type, viewing_hint: viewingHint, values} = rangeRow
     const members = rangesToMembers[rangeId] || {}
     const tags = await getTags(client, rangeId)
-    return {...members, id: rangeId, externalId, label, type, viewingHint, tags, values: iiifValues.parseRows(values)}
+    return {...members, id: rangeId, externalId, label, type, viewingHint, tags, manifestYear, values: iiifValues.parseRows(values)}
   }))
   return structures
 }
