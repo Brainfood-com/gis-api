@@ -9,9 +9,16 @@ const typeToColumn = {
   GEOMETRY: 'geometry_value',
 }
 
+const coerceDbToValue = {
+  NUMBER(value) {
+    return parseFloat(value)
+  },
+}
 export function parseRows(rows) {
   return (rows || []).reduce((result, row) => {
-    result[row.name] = row[typeToColumn[row.value_type_id]]
+    const {value_type_id: valueTypeId} = row
+    const {[valueTypeId]: coerce = value => value} = coerceDbToValue
+    result[row.name] = coerce(row[typeToColumn[valueTypeId]])
     return result
   }, {})
 }
