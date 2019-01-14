@@ -1,8 +1,21 @@
 
 export async function getTags(client, iiifId) {
-  const query = `
+  const bulkTags = await getBulkTags(client, [iiifId])
+  return bulkTags[iiifId]
+}
+
+export async function getBulkTags(client, iiifIds) {
+  const queue = [].concat(iiifIds)
+  const result = iiifIds.reduce((result, iiifId) => {
+    result[iiifId] = []
+    return result
+  }, {})
+
+  while (queue.length) {
+    const batch = queue.splice(0, 50)
+    const query = `
 SELECT
-  b.tag
+  a.iiif_id, b.tag
 FROM
   iiif a JOIN iiif_tags b ON
     a.iiif_type_id = b.iiif_type_id
@@ -13,12 +26,14 @@ FROM
     AND
     b.iiif_tag_id = d.iiif_tag_id
 WHERE
-  iiif_id = $1
+  iiif_id IN (${batch.map((item, index) => '$' + (index + 1)).join(', ')})
 ORDER BY
   d.sequence_num
 `
-  const tagsResult = await client.query(query, [iiifId])
-  return tagsResult.rows.map(row => row.tag)
+    const batchResult = await client.query(query, iiifIds)
+    batchResult.rows.forEach(row => result[row.iiif_id].push(row.tag))
+  }
+  return result
 }
 
 export async function updateTags(client, iiifId, tags) {
