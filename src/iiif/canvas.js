@@ -3,15 +3,15 @@ import {getTags, updateTags} from './tags'
 
 export function processGoogleVision(rawGoogleVision) {
   const {
-    gvCrop,
-    gvImage,
+    crop: gvCrop,
+    image: gvImage,
     label,
     safeSearch,
     text,
     ...rest
   } = rawGoogleVision || {label: [], text: []}
   const {cropHints} = gvCrop || {}
-  const {gvDominantColors} = gvImage || {}
+  const {dominantColors: gvDominantColors} = gvImage || {}
   const {colors = [Color.rgb(0, 0, 0)]} = gvDominantColors || {}
 
   const labelList = label.map(labelEntry => labelEntry.description)
