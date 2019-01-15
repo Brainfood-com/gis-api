@@ -474,6 +474,11 @@ app.get('/range/:rangeId/geoJSON', (req, res) => {
   dbResPoolWorker(res, client => iiifRange.getGeoJSON(client, rangeId))
 })
 
+app.get('/range/:rangeId/json/:canvasId', (req, res) => {
+  const {rangeId, canvasId} = req.params
+  dbResPoolWorker(res, client => iiifRange.getCanvasJSON(client, rangeId, parseInt(canvasId)))
+})
+
 app.get('/canvas/:canvasId', (req, res) => {
   const {canvasId} = req.params
   dbResPoolWorker(res, async client => {

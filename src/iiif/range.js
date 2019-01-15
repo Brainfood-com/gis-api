@@ -220,10 +220,11 @@ const addressFieldSeparators = {
     unit_no: ',',
 }
 
-async function gatherAllExportData(client, rangeId) {
+async function gatherAllExportData(client, rangeId, canvasId) {
   const range = await exports.getOne(client, rangeId)
 
-  const canvasPoints = await getCanvasPoints(client, rangeId)
+  const allCanvasPoints = await getCanvasPoints(client, rangeId)
+  const canvasPoints = canvasId ? allCanvasPoints.filter(canvasPoint => canvasPoint.id === canvasId) : allCanvasPoints
   const allBuildings = {}
   canvasPoints.forEach(canvasPoint => (canvasPoint.buildings || []).forEach(buildingId => allBuildings[buildingId] = false))
   const ignore = (await buildings.getBuildings(client, ...(Object.keys(allBuildings).map(id => parseInt(id))))).forEach(building => {
@@ -240,6 +241,27 @@ async function gatherAllExportData(client, rangeId) {
 export async function getGeoJSON(client, rangeId) {
   const exportData = await gatherAllExportData(client, rangeId)
   return translateToGeoJSON(exportData)
+}
+
+export async function getCanvasJSON(client, rangeId, canvasId) {
+  const exportData = await gatherAllExportData(client, rangeId, canvasId)
+  const {range} = exportData
+  const buildings = {}, taxlots = {}
+  Object.values(exportData.allBuildings).forEach(buildingAndTaxData => {
+    const {taxdata, geojson, ...rest} = buildingAndTaxData
+    const {id} = rest
+    buildings[id] = rest
+    if (taxdata) {
+      const {ain} = taxdata
+      taxlots[ain] = taxdata
+    }
+  })
+  return {
+    range,
+    buildings: Object.values(buildings),
+    taxlots: Object.values(taxlots),
+    canvas: exportData.canvasPoints[0],
+  }
 }
 
 export async function dataExport(client, rangeId) {
