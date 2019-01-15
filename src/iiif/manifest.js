@@ -1,4 +1,4 @@
-import {getTags, updateTags} from './tags'
+import {getTags, getBulkTags, updateTags} from './tags'
 import * as iiifValues from './values'
 
 export async function getParents(client, manifestId) {
@@ -126,11 +126,13 @@ ORDER BY
         break
     }
   })
-  const structures = await Promise.all(manifestRangesResult.rows.map(async rangeRow => {
+  const allRangeIds = manifestRangesResult.rows.map(row => row.range_id)
+  const allRangeTags = await getBulkTags(client, allRangeIds)
+  const structures = manifestRangesResult.rows.map(rangeRow => {
     const {range_id: rangeId, external_id: externalId, label, iiif_type_id: type, viewing_hint: viewingHint, values} = rangeRow
     const members = rangesToMembers[rangeId] || {}
-    const tags = await getTags(client, rangeId)
+    const tags = allRangeTags[rangeId]
     return {...members, id: rangeId, externalId, label, type, viewingHint, tags, manifestYear, values: iiifValues.parseRows(values)}
-  }))
+  })
   return structures
 }
