@@ -115,7 +115,7 @@ async function saveOverridesToDisk(client, iiifId) {
 async function loadOverrideFromDisk(client, file) {
   const data = await fse.readJson(file)
   // FIXME: Deal with _version
-  const {_version, external_id, iiif_type_id, notes, tags, _overrides} = data
+  const {_version, external_id, iiif_type_id, notes, tags, values, _overrides} = data
   const iiifInfo = await client.query('SELECT a.iiif_id, a.external_id, a.iiif_type_id FROM iiif a WHERE a.external_id = $1', [external_id])
   const firstRow = iiifInfo.rows[0] || {}
   if (firstRow.iiif_type_id !== iiif_type_id && firstRow.external_id !== external_id) {
@@ -124,7 +124,7 @@ async function loadOverrideFromDisk(client, file) {
   const {iiif_id} = firstRow
   const dataToSave = {notes, tags, values, ..._overrides}
   console.log('saving', external_id, iiif_id, dataToSave)
-  await iiifValues.updateValues(iiif_id, values)
+  await iiifValues.updateValues(client, iiif_id, values)
   return iiifTypeDescriptors[iiif_type_id].saveOverrides(client, iiif_id, dataToSave)
 }
 
