@@ -406,9 +406,10 @@ app.get('/collection/:collectionId', (req, res) => {
 
 app.post('/collection/:collectionId', jsonParser, (req, res) => {
   const {collectionId} = req.params
-  const {body: {notes, tags}} = req
+  const {body: {notes, tags, values}} = req
   dbResPoolWorker(res, async client => {
     await iiifCollection.updateOne(client, collectionId, {notes, tags})
+    await iiifValues.updateValues(client, collectionId, values)
     await saveOverridesToDisk(client, collectionId)
     await exportData(client, await findAllParents(client, 'sc:Collection', collectionId))
   })
@@ -456,9 +457,10 @@ app.get('/range/:rangeId', (req, res) => {
 
 app.post('/range/:rangeId', jsonParser, (req, res) => {
   const {rangeId} = req.params
-  const {body: {notes, reverse, fovAngle, fovDepth, fovOrientation, tags}} = req
+  const {body: {notes, reverse, fovAngle, fovDepth, fovOrientation, tags, values}} = req
   dbResPoolWorker(res, async client => {
     await iiifRange.updateOne(client, rangeId, {notes, reverse, fovAngle, fovDepth, fovOrientation, tags})
+    await iiifValues.updateValues(client, rangeId, values)
     await saveOverridesToDisk(client, rangeId)
     await exportData(client, await findAllParents(client, 'sc:Range', rangeId))
   })
@@ -491,9 +493,10 @@ app.get('/canvas/:canvasId', (req, res) => {
 
 app.post('/canvas/:canvasId', jsonParser, (req, res) => {
   const {canvasId} = req.params
-  const {body: {notes, tags = [], exclude = false, hole = false}} = req
+  const {body: {notes, tags = [], exclude = false, hole = false, values}} = req
   dbResPoolWorker(res, async client => {
     await iiifCanvas.updateOne(client, canvasId, {notes, exclude, hole, tags})
+    await iiifValues.updateValues(client, canvasId, values)
     await saveOverridesToDisk(client, canvasId)
     await exportData(client, await findAllParents(client, 'sc:Canvas', canvasId))
   })
