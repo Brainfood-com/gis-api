@@ -125,20 +125,17 @@ SELECT
   canvas_overrides.exclude,
   canvas_overrides.hole,
 	range_canvas.*,
-  ST_AsGeoJSON(routing_canvas_range_camera.point) AS point,
-  ST_AsGeoJSON(routing_canvas_range_camera.camera) AS camera,
+  ST_AsGeoJSON(routing_canvas_range_interpolation_cache.point) AS point,
+  ST_AsGeoJSON(routing_canvas_range_interpolation_cache.camera) AS camera,
   (SELECT array_agg(ogc_fid) FROM lariac_buildings WHERE ST_Intersects(camera, wkb_geometry)) AS buildings,
-  routing_canvas_range_camera.addr_number,
-  routing_canvas_range_camera.addr_fullname,
-  routing_canvas_range_camera.addr_zipcode,
-  routing_canvas_range_camera.bearing,
+  routing_canvas_range_interpolation_cache.bearing,
   iiif_values.values,
 	(SELECT json_agg(json_build_object( 'iiif_canvas_override_source_id', iiif_canvas_override_source_id, 'priority', priority, 'point', ST_AsGeoJSON(point))) FROM canvas_point_overrides WHERE iiif_id = range_canvas.iiif_id AND point IS NOT NULL) AS overrides
 FROM
-  range_canvas JOIN routing_canvas_range_camera ON
-    range_canvas.range_id = routing_canvas_range_camera.range_id
+  range_canvas JOIN routing_canvas_range_interpolation_cache ON
+    range_canvas.range_id = routing_canvas_range_interpolation_cache.range_id
     AND
-    range_canvas.iiif_id = routing_canvas_range_camera.iiif_id
+    range_canvas.iiif_id = routing_canvas_range_interpolation_cache.iiif_id
   LEFT JOIN canvas_overrides ON
     range_canvas.iiif_id = canvas_overrides.iiif_id
   LEFT JOIN iiif_values ON
