@@ -220,7 +220,6 @@ class UserConfig {
     return async (req, res, next) => {
       const userDb = req.userDb = await userConfig.initialize()
       const {user} = req
-      console.log('user', user)
       req.userPermissions = await userDb.getGroups(user)
       next()
     }
@@ -264,10 +263,8 @@ class UserDb {
 
   async getGroups(user) {
     const groups = user && user.groups || ['anonymous']
-    console.log('getGroups', user)
     return groups.reduce((permissions, group) => {
       const {[group]: groupPermissions = []} = this._groups
-      console.log('groupPermissions', groupPermissions)
       groupPermissions.forEach(groupPermission => permissions[groupPermission] = true)
       return permissions
     }, {})
@@ -293,7 +290,6 @@ passport.serializeUser((user, done) => {
 })
 passport.deserializeUser(async (id, done) => {
   const user = await userConfig.findById(id)
-  console.log('deserializeUser', id, user)
   return done(null, user)
 })
 
