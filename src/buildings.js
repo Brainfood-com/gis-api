@@ -95,7 +95,7 @@ ORDER BY
 export async function getBuildingsPlaced(client, rangeId) {
   let query = `
 WITH
-  building_range_info AS (
+  building_range_tags AS (
     SELECT DISTINCT
       a.range_id,
       r_it.tag
@@ -115,24 +115,30 @@ WITH
     SELECT
       array_agg(DISTINCT a.range_id) AS range_ids,
       array_agg(DISTINCT a.iiif_id) AS iiif_ids,
-      count(DISTINCT b.range_id) AS claimed_count,
-      count(DISTINCT c.range_id) AS placed_count,
+      count(DISTINCT b.range_id)::integer AS claimed_count,
+      count(DISTINCT c.range_id)::integer AS placed_count,
+      count(DISTINCT d.range_id)::integer AS validated_count,
       a.building_id
     FROM
-      rcri_buildings a LEFT JOIN building_range_info b ON
+      rcri_buildings a LEFT JOIN building_range_tags b ON
         a.range_id = b.range_id
         AND
         b.tag = 'Claimed'
-      LEFT JOIN building_range_info c ON
+      LEFT JOIN building_range_tags c ON
         a.range_id = c.range_id
         AND
         c.tag = 'Placed'
+      LEFT JOIN building_range_tags d ON
+        a.range_id = d.range_id
+        AND
+        d.tag = 'Validated'
     GROUP BY
       a.building_id
   )
 SELECT DISTINCT
   a.claimed_count,
   a.placed_count,
+  a.validated_count,
   a.range_ids,
   a.iiif_ids,
   a.building_id,
@@ -154,11 +160,12 @@ FROM
     const {
       claimed_count: claimedCount,
       placed_count: placedCount,
+      validated_count: validatedCount,
       building_id: buildingId,
       range_ids: rangeIds,
       iiif_ids: canvasIds,
       geojson,
     } = row
-    return {buildingId, claimedCount, placedCount, rangeIds, canvasIds, geojson: geojson ? JSON.parse(geojson) : null}
+    return {buildingId, claimedCount, placedCount, validatedCount, rangeIds, canvasIds, geojson: geojson ? JSON.parse(geojson) : null}
   })
 }
