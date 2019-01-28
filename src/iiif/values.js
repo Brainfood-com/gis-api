@@ -6,6 +6,7 @@ const typeToColumn = {
   TEXT: 'text_value',
   TIMESTAMP: 'timestamp_value',
   JSON: 'json_value',
+  BOOLEAN: 'json_value',
   GEOMETRY: 'geometry_value',
 }
 
@@ -36,8 +37,14 @@ function valueToRow(value) {
     return {value_type_id: 'NULL'}
   } else if (value instanceof Date) {
     return {value_type_id: 'TIMESTAMP', timestamp_value: value}
-  } else {
+  } else if (typeof value === 'boolean') {
+    return {value_type_id: 'BOOLEAN', json_value: value}
+  } else if (Array.isArray(value)) {
+    return {value_type_id: 'JSON', json_value: value}
+  } else if (value === undefined) {
     throw new Error('value not supported:' + value)
+  } else {
+    return {value_type_id: 'JSON', json_value: value}
   }
 }
 
