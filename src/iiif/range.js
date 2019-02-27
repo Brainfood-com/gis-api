@@ -7,6 +7,7 @@ import csvStringify from 'csv-stringify/lib/sync'
 
 import {processGoogleVision} from './canvas'
 import {getTags, updateTags} from './tags'
+import * as iiifManifest from './manifest'
 import * as iiifValues from './values'
 import * as buildings from '../buildings'
 
@@ -219,6 +220,8 @@ const addressFieldSeparators = {
 
 async function gatherAllExportData(client, rangeId, canvasId) {
   const range = await exports.getOne(client, rangeId)
+  const manifest = await exports.getParents(client, rangeId).then(parents => iiifManifest.getOne(client, parents[0][1]))
+  const manifestValues = await iiifValues.getValues(client, manifest.id)
 
   const allCanvasPoints = await getCanvasPoints(client, rangeId)
   const canvasPoints = canvasId ? allCanvasPoints.filter(canvasPoint => canvasPoint.id === canvasId) : allCanvasPoints
@@ -229,6 +232,8 @@ async function gatherAllExportData(client, rangeId, canvasId) {
   })
 
   return {
+    manifest,
+    manifestValues,
     range,
     canvasPoints,
     allBuildings,
@@ -263,7 +268,7 @@ export async function getCanvasJSON(client, rangeId, canvasId) {
 
 export async function dataExport(client, rangeId) {
   const exportData = await gatherAllExportData(client, rangeId)
-  const {range} = exportData
+  const {manifestValues, range} = exportData
   const {fovOrientation} = range
   const allBuildings = {}, allTaxlots = {}
   Object.values(exportData.allBuildings).forEach(buildingAndTaxData => {
@@ -280,6 +285,8 @@ export async function dataExport(client, rangeId) {
     '-range.csv': csvStringify([
       {
         imagecount: exportData.canvasPoints.length,
+        year: manifestValues.year,
+        /*
         date: '?',
         starttime: '?',
         stoptime: '?',
@@ -289,6 +296,7 @@ export async function dataExport(client, rangeId) {
         driver: '?',
         subjectstreet: '?',
         camerainfo: '?'
+        */
       },
     ], {header: true}),
     '-buildings.csv': csvStringify(Object.values(allBuildings), {header: true}),
@@ -318,13 +326,15 @@ export async function dataExport(client, rangeId) {
 }
 
 function translateToGeoJSON(exportData) {
-  const {range, canvasPoints, allBuildings} = exportData
+  const {manifestValues, range, canvasPoints, allBuildings} = exportData
   const {fovOrientation} = range
 
   return {
     type: 'FeatureCollection',
     metadata: {
       imagecount: canvasPoints.length,
+      year: manifestValues.year,
+      /*
       date: '?',
       starttime: '?',
       stoptime: '?',
@@ -334,6 +344,7 @@ function translateToGeoJSON(exportData) {
       driver: '?',
       subjectstreet: '?',
       camerainfo: '?'
+      */
     },
     features: canvasPoints.map(canvasPoint => {
       const {id, bearing, point, googleVision = {}} = canvasPoint
@@ -375,15 +386,14 @@ function translateToGeoJSON(exportData) {
           properties: {
             filename: canvasPoint.image,
             bearing,
-            distance: '?',
-            date: '?',
-            time: '?',
-            distance: '?',
+            //distance: '?',
+            //date: '?',
+            //time: '?',
             streetview,
             streetaddress: addr_parts.filter(item => item).join(' '),
-            structureextant: '?',
+            //structureextant: '?',
             yearbuilt: discoveredTaxData.yearBuilt,
-            zoning: '?',
+            //zoning: '?',
             ocr: googleVision.ocr,
             tags: googleVision.labels,
             colormetadata: {
