@@ -14,7 +14,7 @@ export function processGoogleVision(rawGoogleVision) {
   const {dominantColors: gvDominantColors} = gvImage || {}
   const {colors = [Color.rgb(0, 0, 0)]} = gvDominantColors || {}
 
-  const labelList = label.map(labelEntry => ({score: labelEntry.score, description: labelEntry.description})
+  const labelList = label.map(labelEntry => ({score: labelEntry.score, description: labelEntry.description}))
   const textWordList = text.filter(textEntry => textEntry.description.indexOf('\n') === -1).map(textEntry => textEntry.description)
   const {color: imageColor} = colors.map(({color: {red, green, blue}, score, pixelFraction}) => {
     return {
