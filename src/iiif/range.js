@@ -401,6 +401,7 @@ function translateToGeoJSON(exportData) {
               grey: googleVision.grey,
             },
             taxlots,
+            _googleVision: googleVision,
           },
         }
     }),
