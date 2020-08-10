@@ -1,3 +1,5 @@
+import memoize from 'lodash-es/memoize'
+import fs from 'fs'
 import Color from 'color'
 import {getTags, updateTags} from './tags'
 
@@ -39,6 +41,34 @@ export function processGoogleVision(rawGoogleVision) {
   }
 }
 
+const mapImageServiceBuilder = memoize(fileName => {
+  const rawData = fs.readFileSync(fileName)
+  const mapping = rawData.toString().split('\r\n').map(line => line.split(',')).reduce((mapping, [key, value]) => {
+    mapping[key] = value
+    return mapping
+  }, {})
+  delete mapping.old_fl
+  delete mapping['']
+  const matchRE = /^http:\/\/media.getty.edu\/iiif\/research\/archives\/(?:.*?)_([^_]*)(?:_thumb)?$/
+  return imageService => {
+    const matches = matchRE.exec(imageService)
+    if (!matches) {
+      return imageService
+    }
+    const imageServiceKey = matches[1]
+    const imageServiceGUID = mapping[imageServiceKey]
+    if (!imageServiceGUID) {
+      return imageService
+    }
+    return `https://media.getty.edu/iiif/image/${imageServiceGUID}`
+  }
+}, fileName => fileName)
+
+export const mapImageService = (imageService) => {
+  const mapper = mapImageServiceBuilder('map2-brainfood_ids_amended.csv')
+  return mapper(imageService)
+}
+
 export async function getParents(client, canvasId) {
   const dbResult = await client.query('SELECT DISTINCT range_id FROM range_canvas WHERE iiif_id = $1', [canvasId])
   return dbResult.rows.map(row => ['sc:Range', row.range_id])
@@ -57,8 +87,8 @@ export async function getOne(client, canvasId) {
     type: firstRow.iiif_type_id,
     format: firstRow.format,
     height: firstRow.height,
-    image: firstRow.image,
-    thumbnail: firstRow.thumbnail,
+    image: mapImageService(firstRow.image),
+    thumbnail: mapImageService(firstRow.thumbnail),
     width: firstRow.width,
 
     notes: firstOverrideRow.notes,

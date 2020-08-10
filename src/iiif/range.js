@@ -5,7 +5,7 @@ import promiseLimit from 'promise-limit'
 import getenv from 'getenv'
 import csvStringify from 'csv-stringify/lib/sync'
 
-import {processGoogleVision} from './canvas'
+import {mapImageService, processGoogleVision} from './canvas'
 import {getTags, updateTags} from './tags'
 import * as iiifManifest from './manifest'
 import * as iiifValues from './values'
@@ -147,7 +147,7 @@ ORDER BY
 	iiif_id
 `.replace(/[\t\r\n ]+/g, ' ')
   const manifestRangeMembersResult = await client.query(query, [rangeId])
-  const canvasPoints = manifestRangeMembersResult.rows.map(({iiif_id: id, point, camera, buildings, overrides, bearing, google_vision, values, ...row}, index) => {
+  const canvasPoints = manifestRangeMembersResult.rows.map(({iiif_id: id, point, camera, buildings, overrides, bearing, google_vision, values, image, thumbnail, ...row}, index) => {
     if (overrides) {
       overrides.forEach(override => {
         override.point = JSON.parse(override.point || null)
@@ -163,6 +163,8 @@ ORDER BY
       bearing: radiansToDegrees(bearing),
       googleVision: processGoogleVision(google_vision),
       values: iiifValues.parseRows(values),
+      image: mapImageService(image),
+      thumbnail: mapImageService(thumbnail),
       ...row
     }
     return result

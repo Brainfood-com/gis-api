@@ -1,5 +1,5 @@
 
-import {processGoogleVision} from './iiif/canvas'
+import {mapImageService, processGoogleVision} from './iiif/canvas'
 
 export async function getBuildings(client, ...ogcFids) {
   let query = `
@@ -71,7 +71,7 @@ ORDER BY
   d.range_id, d.sequence_num
 `.replace(/[\t\r\n ]+/g, ' ')
   const result = await client.query(query, [ogcFid])
-  return result.rows.map(({ogc_fid: id, point, camera, buildings, overrides, bearing, google_vision, ...row}, index) => {
+  return result.rows.map(({ogc_fid: id, point, camera, buildings, overrides, bearing, google_vision, image, thumbnail, ...row}, index) => {
     if (overrides) {
       overrides.forEach(override => {
         override.point = JSON.parse(override.point || null)
@@ -86,6 +86,8 @@ ORDER BY
       overrides,
       bearing: radiansToDegrees(bearing),
       googleVision: processGoogleVision(google_vision),
+      image: mapImageService(image),
+      thumbnail: mapImageService(thumbnail),
       ...row
     }
     return result
